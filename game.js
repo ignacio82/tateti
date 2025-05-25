@@ -1,5 +1,5 @@
 /****************************************************
- * GAME LOGIC *
+ * GAME LOGIC (with WebRTC Multiplayer + QR Signaling for Offer/Answer) *
  ***************************************************/
 document.addEventListener('DOMContentLoaded', () => {
     /* ----------  ELEMENTOS DEL DOM  ---------- */
@@ -29,15 +29,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const sideMenu          = document.getElementById('side-menu');
     const restartIcon       = document.getElementById('restart-icon');
 
-    // Destructure sound functions from window for clarity and to avoid scope issues
-    // Ensure these are available from sound-multiplayer.js
+    // QR Code related DOM Elements
+    const qrDisplayArea     = document.getElementById('qr-display-area');
+    const qrCodeCanvas      = document.getElementById('qr-code-canvas');
+    const qrTextData        = document.getElementById('qr-text-data');
+    const qrInputArea       = document.getElementById('qr-input-area');
+    const qrScannedData     = document.getElementById('qr-scanned-data');
+    const qrSubmitScannedData = document.getElementById('qr-submit-scanned-data');
+
+
+    // WebRTC functions from webrtc-multiplayer.js (exposed on window object)
     const {
-        sendPairingRequest: sndPairRequest, // Renamed to avoid conflict if local var exists
-        startListeningForSounds: listenForSnd,
-        sendPairingAccept: sndPairAccept,
-        sendHostAck: sndHostAck,
-        stopListening: stopSndListening,
-        sendMoveViaSound: sndMove,
+        initRTCSession,
+        createOfferForHost,
+        createAnswerForJoiner,
+        acceptAnswerFromHost,
+        addICECandidateToPeer,
+        sendRTCMessage,
+        closeRTCSession,
         showStatusOverlay: showOverlay,
         hideStatusOverlay: hideOverlay
     } = window;
@@ -56,6 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isMyTurnInRemote = true; 
     let iAmPlayer1InRemote = true; 
     let gamePaired = false; 
+    let accumulatedLocalICECandidates = []; // To store ICE candidates before manual exchange
+
 
     let soundEnabled = !(localStorage.getItem('soundDisabled') === 'true');
     const symbolSet = [
@@ -78,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ----------  AUDIO CONTEXT  ---------- */
     let audioCtx;
-    function getAudioContext(){
+    function getAudioContext(){ /* ... (same as before) ... */ 
         if(!audioCtx && soundEnabled){
             try{audioCtx = new (window.AudioContext||window.webkitAudioContext)();}
             catch(e){console.error("AudioContext error",e);soundEnabled=false;soundToggle.textContent='🔇';localStorage.setItem('soundDisabled',true);return null;}
@@ -90,8 +101,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function initAudioOnInteraction(){ if(soundEnabled && !audioCtx){ getAudioContext(); } }
 
+
     /* ----------  CONFETTI & DRAW ANIMATION  ---------- */
-    function launchConfetti(){
+    function launchConfetti(){ /* ... (same as before) ... */ 
         if(!soundEnabled) return;
         const confettiColors=['#ff3860','#ffdd57','#17d1a2','#3e8ed0','#b86bff','var(--pink)','var(--pink-dark)'];
         for(let i=0;i<100;i++){
@@ -112,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function removeConfetti(){ document.querySelectorAll('.confetti').forEach(c=>c.remove()); }
-    function playDrawAnimation(){
+    function playDrawAnimation(){ /* ... (same as before) ... */
         const dur=1800; 
         statusDiv.classList.add('highlight-draw-flash');
         gameBoardEl.classList.add('highlight-draw-border');
@@ -124,8 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return dur; 
     }
 
+
     /* ----------  LÓGICA PRINCIPAL  ---------- */
-    function setBoardClickable(clickable){
+    function setBoardClickable(clickable){ /* ... (same as before) ... */ 
         cells.forEach(cellNode =>{ 
             if(clickable){ 
                 board[cellNode.dataset.index] === null ? cellNode.classList.remove('disabled') : cellNode.classList.add('disabled');
@@ -134,21 +147,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    function getPlayerName(sym){
+    function getPlayerName(sym){ /* ... (same as before) ... */ 
         if(sym===currentSymbols.player1)return `${sym} ${sym==='🦄'?'Unicornio':sym==='🐱'?'Gatito':sym==='🌞'?'Sol':'Equis'}`;
         if(sym===currentSymbols.player2)return `${sym} ${sym==='❤️'?'Corazón':sym==='🐶'?'Perrito':sym==='🌙'?'Luna':'Círculo'}`;
         return sym; 
     }
-    
-    function updateAllUIToggleButtons(){
+    function updateAllUIToggleButtons(){ /* ... (same as before) ... */ 
         pvpLocalBtn.classList.toggle('active', !vsCPU && !pvpRemoteActive);
         hostGameBtn.classList.toggle('active', pvpRemoteActive && iAmPlayer1InRemote && !gamePaired);
         joinGameBtn.classList.toggle('active', pvpRemoteActive && !iAmPlayer1InRemote && !gamePaired);
         cpuBtn.classList.toggle('active', vsCPU);
 
-        document.getElementById('game').style.display = (pvpRemoteActive && !gamePaired) ? 'none' : 'grid';
-        document.getElementById('results').style.display = (pvpRemoteActive && !gamePaired) ? 'none' : 'block';
+        const showGameElements = !(pvpRemoteActive && !gamePaired);
+        document.getElementById('game').style.display = showGameElements ? 'grid' : 'none';
+        document.getElementById('results').style.display = showGameElements ? 'block' : 'none';
+        qrDisplayArea.style.display = 'none'; // Hide QR by default
+        qrInputArea.style.display = 'none';   // Hide QR input by default
+
 
         difficultyDiv.style.display = vsCPU ? 'flex' : 'none';
         easyBtn.classList.toggle('active',difficulty==='easy');
@@ -164,11 +179,15 @@ document.addEventListener('DOMContentLoaded', () => {
         soundToggle.textContent=soundEnabled?'🔊':'🔇';
     }
 
-    function init(){
+    function init(){ /* ... (largely same, ensure QR areas are hidden) ... */
         removeConfetti();
-        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
-        if (typeof stopSndListening === "function") stopSndListening();  else console.warn("stopSndListening is not defined");
-
+        hideOverlay();
+        qrDisplayArea.style.display = 'none';
+        qrInputArea.style.display = 'none';
+        
+        if (pvpRemoteActive && !gamePaired) { 
+            closeRTCSessionSafely();
+        }
 
         board=Array(9).fill(null);
         difficulty = easyBtn.classList.contains('active')?'easy':hardBtn.classList.contains('active')?'hard':'medium';
@@ -180,15 +199,11 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.textContent = isMyTurnInRemote ? `Tu Turno ${getPlayerName(currentPlayer)}` : `Esperando a ${getPlayerName(currentPlayer)}...`;
             setBoardClickable(isMyTurnInRemote);
             gameActive = true;
-            if (!isMyTurnInRemote) {
-                listenForRemoteMove();
-            }
         } else if (pvpRemoteActive && !gamePaired) {
-            // This state is handled by handleHostGame/handleJoinGame UI updates.
-            // init() might be called after pairing, so this branch handles if it's called *before* full pairing.
-            statusDiv.textContent = iAmPlayer1InRemote ? "Esperando que alguien se una..." : "Buscando juego hosteado...";
+            // UI for this state is handled by host/join functions
+            statusDiv.textContent = iAmPlayer1InRemote ? "Hosteando... Generando oferta QR." : "Uniéndote... Esperando oferta QR.";
             setBoardClickable(false);
-        } else if (vsCPU) {
+        } else if (vsCPU) { /* ... (same CPU logic) ... */
             gameActive = true;
             switch(whoGoesFirstSetting){
                 case 'random': currentPlayer = Math.random()<.5?currentSymbols.player1:currentSymbols.player2; break;
@@ -204,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 setBoardClickable(true);
             }
-        } else { // Local PvP
+        } else { /* ... (same Local PvP logic) ... */ 
             gameActive = true;
              switch(whoGoesFirstSetting){
                 case 'random': currentPlayer = Math.random()<.5?currentSymbols.player1:currentSymbols.player2; break;
@@ -223,114 +238,240 @@ document.addEventListener('DOMContentLoaded', () => {
         gameBoardEl.style.borderColor='';gameBoardEl.style.boxShadow='';
         
         updateAllUIToggleButtons();
-        if(gameActive) playSound('reset');
+        if(gameActive && !(pvpRemoteActive && !isMyTurnInRemote)) playSound('reset');
         
         sideMenu.classList.remove('open');
     }
-
-    function stopAnyGameInProgress() {
+    function closeRTCSessionSafely() { /* ... (same as before) ... */ 
+        if (typeof closeRTCSession === "function") {
+            closeRTCSession();
+        } else {
+            console.warn("closeRTCSession is not defined");
+        }
+    }
+    function stopAnyGameInProgress() { /* ... (same as before) ... */ 
         gameActive = false;
-        if (typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
+        closeRTCSessionSafely();
         board = Array(9).fill(null); 
         cells.forEach(c => { c.querySelector('span').textContent = ''; c.classList.remove('rainbow', 'disabled'); });
         removeConfetti();
-        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
+        hideOverlay();
+        qrDisplayArea.style.display = 'none';
+        qrInputArea.style.display = 'none';
     }
 
-    function handleHostGame() {
-        stopAnyGameInProgress();
-        pvpRemoteActive = true;
-        vsCPU = false;
-        iAmPlayer1InRemote = true;
-        gamePaired = false;
-        updateAllUIToggleButtons();
-        statusDiv.textContent = "Hosteando... Enviando señal de pairing.";
-        if (typeof showOverlay === "function") showOverlay("Enviando señal para que otro jugador se una... 🔊"); else console.warn("showOverlay is not defined");
-        
-        if (typeof sndPairRequest !== "function" || typeof listenForSnd !== "function") {
-            console.error("Sound functions (sndPairRequest or listenForSnd) not defined!");
-            statusDiv.textContent = "Error: Funciones de sonido no encontradas.";
-            if (typeof hideOverlay === "function") hideOverlay();
+    // ----- QR Code Helper Functions -----
+    function displaySignalForQR(title, dataString) {
+        if (!qrCodeCanvas || !qrTextData || !qrDisplayArea) {
+            console.error("QR display elements not found!");
+            alert("Error: Elementos para QR no encontrados. Revisa HTML.\n" + title + "\n" + dataString);
             return;
         }
+        qrTextData.value = dataString;
+        try {
+            new QRious({
+                element: qrCodeCanvas,
+                value: dataString,
+                size: 200,
+                padding: 10,
+                level: 'L' // Low error correction, for more data
+            });
+        } catch (e) {
+            console.error("Error generating QR code:", e);
+            alert("Error al generar QR. El texto podría ser muy largo.");
+            qrCodeCanvas.getContext('2d').clearRect(0,0,qrCodeCanvas.width, qrCodeCanvas.height); // Clear if error
+        }
+        qrDisplayArea.querySelector('h3').textContent = title;
+        qrDisplayArea.style.display = 'block';
+        qrInputArea.style.display = 'none';
+        showOverlay(title.substring(0, 50) + "..."); // Keep overlay brief
+    }
 
-        sndPairRequest(); 
-        listenForSnd('pair_accept', (signal) => {
-            if (signal === 'pair_accept_detected') {
-                statusDiv.textContent = "Jugador encontrado! Enviando ACK final...";
-                if (typeof sndHostAck !== "function") {
-                    console.error("sndHostAck function not defined! Cannot complete handshake.");
-                    statusDiv.textContent = "Error crítico en handshake! (ACK)";
-                     if (typeof hideOverlay === "function") hideOverlay();
-                    return; 
+    function getInputSignalFromQR(promptMessage) {
+        if (!qrInputArea || !qrScannedData || !qrSubmitScannedData) {
+            console.error("QR input elements not found!");
+            return Promise.reject("QR input elements not found.");
+        }
+        qrDisplayArea.style.display = 'none';
+        qrInputArea.style.display = 'block';
+        qrInputArea.querySelector('h3').textContent = promptMessage;
+        qrScannedData.value = '';
+        showOverlay(promptMessage.substring(0,50) + "...");
+
+        return new Promise((resolve) => {
+            const currentButton = qrSubmitScannedData; // Avoid issues if button is re-rendered or listener stacks
+            const clickHandler = () => {
+                const data = qrScannedData.value.trim();
+                if (data) {
+                    qrInputArea.style.display = 'none';
+                    hideOverlay();
+                    currentButton.removeEventListener('click', clickHandler); // Clean up listener
+                    resolve(data);
+                } else {
+                    alert("Por favor, pega los datos escaneados del código QR.");
                 }
-                
-                sndHostAck(); // HOST sends final ACK
-                
-                gamePaired = true;
-                if (typeof hideOverlay === "function") hideOverlay();
-                playSound('win'); 
-                statusDiv.textContent = "¡Conectado! Eres Jugador 1 (🦄). Iniciando...";
-                init(); 
-            } else {
-                // This path might be taken if stopListening was called by another instance
-                // or if a non-target sound was strong enough but filtered out by type.
-                // Consider adding a timeout or retry limit for robustness.
-                // if (gamePaired) return; // Already paired by a rapid subsequent signal.
-                console.log("Host: 'pair_accept' not detected or unexpected signal:", signal);
-                // statusDiv.textContent = "Esperando aceptación del jugador..."; // Keep UI indicating listening
-            }
+            };
+            currentButton.addEventListener('click', clickHandler, { once: true }); // Use once or manage listener removal
         });
     }
 
-    function handleJoinGame() {
-        stopAnyGameInProgress();
-        pvpRemoteActive = true;
-        vsCPU = false;
-        iAmPlayer1InRemote = false;
-        gamePaired = false;
-        updateAllUIToggleButtons(); 
-        statusDiv.textContent = "Buscando juego... Escuchando señal de pairing.";
-        if (typeof showOverlay === "function") showOverlay("Escuchando para unirse a un juego... 🔊"); else console.warn("showOverlay is not defined");
 
+    // ----- WebRTC Multiplayer Logic -----
+    const rtcCallbacks = {
+        onDataChannelOpen: () => { /* ... (same as before) ... */ 
+            console.log("GAME.JS: Data channel opened!");
+            gamePaired = true;
+            hideOverlay();
+            qrDisplayArea.style.display = 'none'; // Hide any QR stuff
+            qrInputArea.style.display = 'none';
+            statusDiv.textContent = `¡Conectado! ${iAmPlayer1InRemote ? "Eres Jugador 1 (🦄)." : "Eres Jugador 2 (❤️)."}`;
+            playSound('win');
+            init(); 
+        },
+        onDataReceived: (data) => { /* ... (same as before) ... */ 
+            console.log("GAME.JS: Data received:", data);
+            if (!gameActive || !pvpRemoteActive || isMyTurnInRemote || !gamePaired) {
+                 console.warn("GAME.JS: Received data but not expecting it or game not in correct state.", {isMyTurnInRemote, gameActive, pvpRemoteActive, gamePaired});
+                 return;
+            }
+            if (data.type === 'move' && typeof data.index === 'number') {
+                handleRemoteMoveDetected(data.index);
+            } else if (data.type === 'restart_request') {
+                if(confirm("Oponente quiere reiniciar. ¿Aceptar?")){
+                    init();
+                    sendRTCMessage({ type: 'restart_ack' });
+                }
+            } else if (data.type === 'restart_ack') {
+                alert("Reinicio aceptado por oponente.");
+                init();
+            }
+        },
+        onConnectionStateChange: (state) => { /* ... (same, ensure QR areas hidden on failure) ... */ 
+            console.log("GAME.JS: Connection state changed:", state);
+            statusDiv.textContent = `RTC Estado: ${state}`;
+            if (state !== 'connected' && state !== 'connecting') showOverlay(`Conexión: ${state}`);
 
-        if (typeof listenForSnd !== "function" || typeof sndPairAccept !== "function") {
-            console.error("Sound functions (listenForSnd or sndPairAccept) not defined!");
-            statusDiv.textContent = "Error: Funciones de sonido no encontradas.";
-            if (typeof hideOverlay === "function") hideOverlay();
-            return;
+            if (state === 'connected') {
+                hideOverlay();
+            } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+                showOverlay(`Desconectado o falló la conexión.`);
+                qrDisplayArea.style.display = 'none';
+                qrInputArea.style.display = 'none';
+                if (pvpRemoteActive) { 
+                    alert("La conexión con el otro jugador se perdió o falló.");
+                    pvpRemoteActive = false;
+                    gamePaired = false;
+                    init(); 
+                }
+            }
+        },
+        onIceCandidate: (candidate) => {
+            const candidateString = JSON.stringify(candidate);
+            console.log("My ICE Candidate (for manual exchange after QR):", candidateString);
+            accumulatedLocalICECandidates.push(candidateString);
+            // Inform user to collect them. A better UI would show a list.
+            showOverlay("Nuevo CANDIDATO ICE generado. Se agruparán para intercambio manual después de la oferta/respuesta QR.");
         }
+    };
 
-        listenForSnd('pair_request', (signal) => {
-            if (signal === 'pair_request_detected') {
-                if (typeof hideOverlay === "function") hideOverlay();
-                statusDiv.textContent = "Juego encontrado! Enviando aceptación y esperando ACK del Host...";
-                playSound('move'); 
-                sndPairAccept(); 
+    async function handleHostGame() {
+        stopAnyGameInProgress();
+        pvpRemoteActive = true; vsCPU = false; iAmPlayer1InRemote = true; gamePaired = false;
+        accumulatedLocalICECandidates = [];
+        updateAllUIToggleButtons();
+        
+        statusDiv.textContent = "Hosteando... Inicializando sesión RTC.";
+        showOverlay("Iniciando sesión RTC como Host...");
+        initRTCSession(rtcCallbacks);
 
-                if (typeof showOverlay === "function") showOverlay("Esperando confirmación final del Host... 🔊");
-                listenForSnd('host_ack', (ackSignal) => {
-                    if (ackSignal === 'host_ack_detected') {
-                        gamePaired = true;
-                        if (typeof hideOverlay === "function") hideOverlay();
-                        playSound('win'); 
-                        statusDiv.textContent = "¡Conectado y confirmado! Eres Jugador 2 (❤️). Iniciando...";
-                        init(); 
-                    } else {
-                        console.log("Joiner: 'host_ack' not detected or unexpected signal:", ackSignal);
-                        if (typeof showOverlay === "function") showOverlay("Error de confirmación. Intenta unirte de nuevo.");
-                        // Consider resetting state:
-                        // pvpRemoteActive = false; gamePaired = false; init(); // Go back to main menu essentially
+        try {
+            const offer = await createOfferForHost();
+            if (offer) {
+                const offerString = JSON.stringify(offer);
+                displaySignalForQR("Host: Jugador 2 escanea esta OFERTA", offerString);
+                statusDiv.textContent = "Host: Oferta creada (QR). Esperando respuesta del Jugador 2.";
+
+                const answerString = await getInputSignalFromQR("Host: Pega la RESPUESTA (escaneada del QR del Jugador 2) aquí:");
+                if (answerString) {
+                    try {
+                        const answer = JSON.parse(answerString);
+                        await acceptAnswerFromHost(answer);
+                        statusDiv.textContent = "Host: Respuesta recibida. Intercambiando Candidatos ICE...";
+                        showOverlay("Respuesta OK. Ahora intercambia Candidatos ICE manualmente.");
+
+                        // Manual ICE Exchange
+                        const allLocalIce = accumulatedLocalICECandidates.join('\n');
+                        prompt("Host: COPIA TODOS estos tus Candidatos ICE y envíaselos al Jugador 2:\n\n" + (allLocalIce || "No hay candidatos aún, espera un momento y revisa la consola."), allLocalIce);
+                        
+                        const remoteIceString = prompt("Host: PEGA TODOS los Candidatos ICE del Jugador 2 aquí (uno por línea si son varios):");
+                        if (remoteIceString) {
+                            remoteIceString.trim().split('\n').forEach(candStr => {
+                                if (candStr.trim()) {
+                                    try { addICECandidateToPeer(JSON.parse(candStr.trim())); }
+                                    catch (e) { console.error("Error parsing remote ICE candidate:", e, candStr); alert("Error al procesar un candidato ICE remoto: " + candStr);}
+                                }
+                            });
+                        }
+                        statusDiv.textContent = "Host: Candidatos procesados. Esperando conexión...";
+                    } catch (e) {
+                        console.error("Error parsing Answer:", e); alert("Error: La respuesta no es válida.");
+                        statusDiv.textContent = "Error en la respuesta."; pvpRemoteActive = false; init();
                     }
-                });
-            } else {
-                 console.log("Joiner: 'pair_request' not detected or unexpected signal:", signal);
-                // statusDiv.textContent = "No se encontró juego hosteado...";
+                } else { alert("Host: Proceso de respuesta cancelado."); pvpRemoteActive = false; init(); }
             }
-        });
+        } catch (error) {
+            console.error("GAME.JS: Error hosting game:", error);
+            statusDiv.textContent = "Error al hostear."; showOverlay("Error al hostear el juego.");
+            pvpRemoteActive = false; init();
+        }
     }
 
-    function makeMove(index, playerSymbol){
+    async function handleJoinGame() {
+        stopAnyGameInProgress();
+        pvpRemoteActive = true; vsCPU = false; iAmPlayer1InRemote = false; gamePaired = false;
+        accumulatedLocalICECandidates = [];
+        updateAllUIToggleButtons();
+
+        statusDiv.textContent = "Uniéndote... Esperando oferta QR del Host.";
+        showOverlay("Esperando oferta QR del Host...");
+        initRTCSession(rtcCallbacks);
+
+        const offerString = await getInputSignalFromQR("Jugador 2: Pega la OFERTA (escaneada del QR del Host) aquí:");
+        if (!offerString) { alert("Joiner: Proceso de unirse cancelado."); pvpRemoteActive = false; init(); return; }
+
+        try {
+            const offer = JSON.parse(offerString);
+            const answer = await createAnswerForJoiner(offer);
+
+            if (answer) {
+                const answerString = JSON.stringify(answer);
+                displaySignalForQR("Jugador 2: Host escanea esta RESPUESTA", answerString);
+                statusDiv.textContent = "Joiner: Respuesta creada (QR). Esperando que Host la procese e intercambiar Candidatos ICE.";
+                showOverlay("Respuesta OK. Host debe escanear. Luego intercambia Candidatos ICE manualmente.");
+
+                // Manual ICE Exchange
+                const allLocalIce = accumulatedLocalICECandidates.join('\n');
+                prompt("Jugador 2: COPIA TODOS estos tus Candidatos ICE y envíaselos al Host:\n\n" + (allLocalIce || "No hay candidatos aún, espera un momento y revisa la consola."), allLocalIce);
+
+                const remoteIceString = prompt("Jugador 2: PEGA TODOS los Candidatos ICE del Host aquí (uno por línea si son varios):");
+                if (remoteIceString) {
+                    remoteIceString.trim().split('\n').forEach(candStr => {
+                        if (candStr.trim()) {
+                           try { addICECandidateToPeer(JSON.parse(candStr.trim())); }
+                           catch (e) { console.error("Error parsing remote ICE candidate:", e, candStr); alert("Error al procesar un candidato ICE remoto: " + candStr); }
+                        }
+                    });
+                }
+                statusDiv.textContent = "Joiner: Candidatos procesados. Esperando conexión...";
+            }
+        } catch (error) {
+            console.error("GAME.JS: Error joining game:", error);
+            alert("Error al unirse: " + error.message);
+            statusDiv.textContent = "Error al unirse."; pvpRemoteActive = false; init();
+        }
+    }
+
+    function makeMove(index, playerSymbol){ /* ... (same as before) ... */ 
         if (board[index] !== null) return false; 
         board[index]=playerSymbol;
         cells[index].querySelector('span').textContent=playerSymbol;
@@ -340,103 +481,59 @@ document.addEventListener('DOMContentLoaded', () => {
         playSound('move');
         return true;
     }
-
-    function listenForRemoteMove() {
-        if (!pvpRemoteActive || isMyTurnInRemote || !gameActive || !gamePaired) {
-            console.log("Not listening for remote move:", {pvpRemoteActive, isMyTurnInRemote, gameActive, gamePaired});
+    function handleRemoteMoveDetected(index) { /* ... (same as before) ... */ 
+        hideOverlay(); 
+        if (typeof index !== 'number' || index < 0 || index > 8) {
+            console.warn("Invalid remote move index:", index);
             return;
         }
-        if (typeof showOverlay === "function") showOverlay(`Esperando el movimiento de ${getPlayerName(currentPlayer)}... 🔊`); else console.warn("showOverlay is not defined");
-        
-        if (typeof listenForSnd !== "function") {
-            console.error("listenForSnd is not defined!");
-            if (typeof hideOverlay === "function") hideOverlay();
-            statusDiv.textContent = "Error crítico: Escucha de sonidos no disponible.";
-            return;
-        }
-        listenForSnd('move', handleRemoteMoveDetected);
-    }
-
-    function handleRemoteMoveDetected(indexOrSignal) {
-        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
-
-        if (typeof indexOrSignal !== 'number' || indexOrSignal < 0 || indexOrSignal > 8) {
-            console.warn("Invalid move detected or wrong signal type for move:", indexOrSignal);
-            if (gameActive && pvpRemoteActive && !isMyTurnInRemote && gamePaired) {
-                 console.log("Re-listening due to invalid signal for move.");
-                 listenForRemoteMove(); 
-            }
-            return;
-        }
-        
-        const index = indexOrSignal;
-
         if (!gameActive || board[index] !== null || !pvpRemoteActive || isMyTurnInRemote || !gamePaired) {
             console.warn("Remote move ignored due to invalid game state:", {index, gameActive, boardVal: board[index], pvpRemoteActive, isMyTurnInRemote, gamePaired});
-            if (gameActive && pvpRemoteActive && !isMyTurnInRemote && gamePaired) {
-                console.log("Re-listening due to invalid game state for received move.");
-                listenForRemoteMove();
-            }
             return;
         }
-
-        if (!makeMove(index, currentPlayer)) { // currentPlayer is the opponent who just made the move
+        if (!makeMove(index, currentPlayer)) { 
             console.error("Failed to make remote move on board, cell might be taken despite checks.");
-             if (gameActive && pvpRemoteActive && !isMyTurnInRemote && gamePaired) listenForRemoteMove();
             return;
         }
-
         const win = checkWin(currentPlayer); 
-        if (win) {
-            endGame(currentPlayer, win);
-            return;
-        }
-        if (checkDraw()) {
-            endDraw();
-            return;
-        }
-
+        if (win) { endGame(currentPlayer, win); return; }
+        if (checkDraw()) { endDraw(); return; }
         switchPlayer(); 
         isMyTurnInRemote = true; 
         statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
         setBoardClickable(true);
     }
-
-    function handleCellClick(e){
+    function handleCellClick(e){ /* ... (same as before) ... */ 
         const idx = +e.currentTarget.dataset.index;
-        
         if (!gameActive || board[idx] !== null ) return;
-        if (pvpRemoteActive && (!isMyTurnInRemote || !gamePaired)) return;
-
+        if (pvpRemoteActive && (!isMyTurnInRemote || !gamePaired)) {
+            if (gamePaired) alert("No es tu turno."); else alert("El juego no está emparejado aún.");
+            return;
+        }
         if (!makeMove(idx, currentPlayer)) return; 
-
         if (pvpRemoteActive && gamePaired) {
-            if (typeof sndMove !== "function") {
-                 console.error("sndMove is not defined!");
-                 statusDiv.textContent = "Error: Función para enviar sonido no disponible.";
+            if (typeof sendRTCMessage === "function") {
+                sendRTCMessage({ type: 'move', index: idx }); 
+            } else {
+                 console.error("sendRTCMessage is not defined!");
+                 statusDiv.textContent = "Error: Función para enviar mensaje RTC no disponible.";
                  return;
             }
-            sndMove(idx); 
         }
-
         const win = checkWin(currentPlayer);
         if(win){ endGame(currentPlayer,win); return; }
         if(checkDraw()){ endDraw(); return; }
-
         switchPlayer(); 
-
         if (pvpRemoteActive && gamePaired) {
             isMyTurnInRemote = false; 
             statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`; 
             setBoardClickable(false);
-            listenForRemoteMove();
         } else if(vsCPU && currentPlayer===currentSymbols.player2){ 
             setBoardClickable(false);
             setTimeout(()=>{ if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
         }
     }
-    
-    function cpuMove(){
+    function cpuMove(){ /* ... (same as before) ... */ 
         if(!gameActive) return;
         let idx;
         switch(difficulty){
@@ -446,20 +543,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(idx===null || board[idx]!==null) idx=randomMove(); 
         if(idx===null){ if(checkDraw()) endDraw(); return; } 
-
         makeMove(idx,currentSymbols.player2); 
         const win=checkWin(currentSymbols.player2);
         if(win){ endGame(currentSymbols.player2,win); return; }
         if(checkDraw()){ endDraw(); return; }
         switchPlayer(); 
     }
-
-    function randomMove(){
+    function randomMove(){ /* ... (same as before) ... */ 
         const a=board.map((v,i)=>v===null?i:null).filter(v=>v!==null);
         return a.length? a[Math.floor(Math.random()*a.length)] : null;
     }
-
-    function bestMove(){
+    function bestMove(){ /* ... (same as before) ... */ 
         for(let i=0;i<9;i++)if(!board[i]){board[i]=currentSymbols.player2;if(checkWin(currentSymbols.player2)){board[i]=null;return i;}board[i]=null;}
         for(let i=0;i<9;i++)if(!board[i]){board[i]=currentSymbols.player1;if(checkWin(currentSymbols.player1)){board[i]=null;return i;}board[i]=null;}
         if(board[4]===null) return 4;
@@ -467,63 +561,72 @@ document.addEventListener('DOMContentLoaded', () => {
         if(corners.length) return corners[Math.floor(Math.random()*corners.length)];
         return randomMove();
     }
-
-    function checkWin(playerSymbol, currentBoard = board){
+    function checkWin(playerSymbol, currentBoard = board){ /* ... (same as before) ... */ 
         const c=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
         return c.find(combo=>combo.every(i=>currentBoard[i]===playerSymbol))||null;
     }
-
-    function checkDraw(currentBoard = board){ 
+    function checkDraw(currentBoard = board){  /* ... (same as before) ... */
         return currentBoard.every(cell=>cell!==null) && !checkWin(currentSymbols.player1, currentBoard) && !checkWin(currentSymbols.player2, currentBoard);
     }
-
-    function endGame(playerSymbol, winningCells){
-        if(!gameActive) return; 
+    function endGame(playerSymbol, winningCells){ /* ... (same as before, ensure QR areas hidden) ... */ 
+        if(!gameActive && !(pvpRemoteActive && gamePaired)) return; 
         gameActive=false; 
         setBoardClickable(false);
-        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
-        if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
-
+        hideOverlay();
+        qrDisplayArea.style.display = 'none';
+        qrInputArea.style.display = 'none';
+        
+        if (pvpRemoteActive && gamePaired) { 
+             setTimeout(() => closeRTCSessionSafely(), 1000); 
+        }
         if(winningCells) winningCells.forEach(i=>cells[i].classList.add('rainbow'));
         statusDiv.textContent=`¡${getPlayerName(playerSymbol)} ganó!`; statusDiv.classList.add('highlight');
-        
         if(playerSymbol===currentSymbols.player1){unicornWins++;localStorage.setItem('unicornWins',unicornWins);lastWinner=currentSymbols.player1;}
         else{heartWins++;localStorage.setItem('heartWins',heartWins);lastWinner=currentSymbols.player2;}
         previousGameExists=true; 
         updateScoreboard(); 
         playSound('win'); 
         launchConfetti();
-
-        const autoRestartDelay = (pvpRemoteActive && gamePaired) ? AUTO_RESTART_DELAY_WIN + 2000 : AUTO_RESTART_DELAY_WIN;
-        setTimeout(()=>{removeConfetti(); init();}, autoRestartDelay);
+        const autoRestartDelay = (pvpRemoteActive && gamePaired) ? AUTO_RESTART_DELAY_WIN + 3000 : AUTO_RESTART_DELAY_WIN;
+        setTimeout(()=>{
+            removeConfetti(); 
+            if (pvpRemoteActive && gamePaired) {
+                pvpRemoteActive = false; gamePaired = false;
+            }
+            init();
+        }, autoRestartDelay);
     }
-
-    function endDraw(){
-        if(!gameActive) return;
+    function endDraw(){ /* ... (same as before, ensure QR areas hidden) ... */ 
+        if(!gameActive && !(pvpRemoteActive && gamePaired)) return;
         gameActive=false; 
         setBoardClickable(false);
-        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
-        if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
+        hideOverlay();
+        qrDisplayArea.style.display = 'none';
+        qrInputArea.style.display = 'none';
 
+        if (pvpRemoteActive && gamePaired) {
+             setTimeout(() => closeRTCSessionSafely(), 1000);
+        }
         statusDiv.textContent='¡Empate!'; statusDiv.classList.add('highlight');
         draws++;localStorage.setItem('draws',draws);lastWinner=null;previousGameExists=true;
         updateScoreboard();
         playSound('draw');
         const animationDuration = playDrawAnimation();
-
-        const autoRestartDelay = (pvpRemoteActive && gamePaired) ? Math.max(animationDuration + 200, AUTO_RESTART_DELAY_DRAW) + 2000 : Math.max(animationDuration + 200, AUTO_RESTART_DELAY_DRAW);
-        setTimeout(()=>init(), autoRestartDelay);
+        const autoRestartDelay = (pvpRemoteActive && gamePaired) ? Math.max(animationDuration + 200, AUTO_RESTART_DELAY_DRAW) + 3000 : Math.max(animationDuration + 200, AUTO_RESTART_DELAY_DRAW);
+        setTimeout(()=>{
+            if (pvpRemoteActive && gamePaired) {
+                pvpRemoteActive = false; gamePaired = false;
+            }
+            init();
+        }, autoRestartDelay);
     }
-
-    function switchPlayer(){
+    function switchPlayer(){ /* ... (same as before) ... */ 
         currentPlayer = (currentPlayer===currentSymbols.player1)?currentSymbols.player2:currentSymbols.player1;
     }
-
-    function updateScoreboard(){
+    function updateScoreboard(){ /* ... (same as before) ... */ 
         unicornSpan.textContent=unicornWins;heartSpan.textContent=heartWins;drawsSpan.textContent=draws;
     }
-
-    function playSound(type){
+    function playSound(type){ /* ... (same as before) ... */ 
         if(!soundEnabled||!getAudioContext()|| (audioCtx && audioCtx.state!=='running') ) return;
         try{
             const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);
@@ -540,89 +643,73 @@ document.addEventListener('DOMContentLoaded', () => {
             o.start();g.gain.exponentialRampToValueAtTime(.00001,audioCtx.currentTime+t);o.stop(audioCtx.currentTime+t+.05);
         }catch(err){console.error("Error playing sound:",err);}
     }
-
-    function toggleTheme(){
+    function toggleTheme(){ /* ... (same as before) ... */ 
         document.body.classList.toggle('dark-theme');
         localStorage.setItem('darkTheme',document.body.classList.contains('dark-theme'));
         updateAllUIToggleButtons(); playSound('move');
     }
-
-    function toggleSound(){
+    function toggleSound(){ /* ... (same as before) ... */ 
         soundEnabled=!soundEnabled;localStorage.setItem('soundDisabled',!soundEnabled);
         if(soundEnabled) initAudioOnInteraction(); else {
             if(audioCtx&&audioCtx.state==='running') audioCtx.suspend().catch(e => console.error("Error suspending audio context:", e));
-            if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
-            if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
+            hideOverlay(); 
         }
         updateAllUIToggleButtons(); if(soundEnabled) playSound('move');
     }
-
-    function changeSymbols(){
+    function changeSymbols(){ /* ... (same as before) ... */ 
         currentSymbolIndex=(currentSymbolIndex+1)%symbolSet.length;localStorage.setItem('currentSymbolIndex',currentSymbolIndex);
         currentSymbols=symbolSet[currentSymbolIndex];
-        
         const oldPlayer1Symbol = symbolSet[(currentSymbolIndex - 1 + symbolSet.length) % symbolSet.length].player1;
         const oldPlayer2Symbol = symbolSet[(currentSymbolIndex - 1 + symbolSet.length) % symbolSet.length].player2;
         if (currentPlayer === oldPlayer1Symbol) currentPlayer = currentSymbols.player1;
         else if (currentPlayer === oldPlayer2Symbol) currentPlayer = currentSymbols.player2;
-
         const rDiv=document.getElementById('results');
         rDiv.childNodes[0].nodeValue=currentSymbols.player1+' '; 
         rDiv.childNodes[2].nodeValue=' – '+currentSymbols.player2+' '; 
-        
         playSound('move'); 
         init(); 
     }
 
     /* ----------  EVENT LISTENERS  ---------- */
     cells.forEach(c=>{c.addEventListener('click',handleCellClick);c.setAttribute('tabindex','0');c.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();c.click();}});});
-    
     restartBtn.addEventListener('click',init); 
-
-    restartIcon.addEventListener('click', () => {
+    restartIcon.addEventListener('click', () => { /* ... (same as before) ... */ 
         stopAnyGameInProgress(); 
         if (pvpRemoteActive) { 
-            pvpRemoteActive = false; 
-            gamePaired = false;      
+            pvpRemoteActive = false; gamePaired = false;      
         }
         init(); 
         if (sideMenu.classList.contains('open')) sideMenu.classList.remove('open');
     });
-
-    pvpLocalBtn.addEventListener('click',()=>{
+    pvpLocalBtn.addEventListener('click',()=>{ /* ... (same as before) ... */ 
         stopAnyGameInProgress();
         vsCPU=false;
-        pvpRemoteActive = false;
-        gamePaired = false;
+        if (pvpRemoteActive) { }
+        pvpRemoteActive = false; gamePaired = false;
         init(); 
     });
-
     hostGameBtn.addEventListener('click', handleHostGame);
     joinGameBtn.addEventListener('click', handleJoinGame);
-    
-    cpuBtn.addEventListener('click',()=>{
+    cpuBtn.addEventListener('click',()=>{ /* ... (same as before) ... */ 
         stopAnyGameInProgress();
         vsCPU=true;
-        pvpRemoteActive = false;
-        gamePaired = false;
+        if (pvpRemoteActive) {}
+        pvpRemoteActive = false; gamePaired = false;
         init(); 
     });
-
-    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{
+    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{ /* ... (same as before) ... */ 
         difficulty=e.target.id.replace('Btn','');
         updateAllUIToggleButtons();
         playSound('move');
-        if(!gameActive || vsCPU) init();
+        if(!gameActive || vsCPU) init(); 
     }));
-
-    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn.addEventListener('click',e=>{
+    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn.addEventListener('click',e=>{ /* ... (same as before) ... */ 
         whoGoesFirstSetting=e.target.id.replace('StartsBtn','');
         localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting);
         updateAllUIToggleButtons();
         playSound('move');
-        if(!gameActive || board.every(c=>c===null)) init();
+        if(!gameActive || board.every(c=>c===null)) init(); 
     }));
-
     changeSymbolsBtn.addEventListener('click',changeSymbols);
     themeToggle.addEventListener('click',toggleTheme);
     soundToggle.addEventListener('click',toggleSound);
@@ -635,7 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ----------  PWA bootstrap  ---------- */
-if('serviceWorker' in navigator){
+if('serviceWorker' in navigator){ /* ... (same as before) ... */ 
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('./sw.js')
       .then(reg => console.log('SW registered!', reg))
