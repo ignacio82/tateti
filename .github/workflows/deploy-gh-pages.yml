@@ -1,0 +1,48 @@
+name: Deploy to GitHub Pages
+
+# Controls when the workflow will run
+on:
+  push:
+    branches:
+      - main # Or master, or whichever branch you use for your main development
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      # Step 1: Check out your repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Or a specific later version
+
+      # Step 2: Create firebase-config.js from secrets
+      - name: Create Firebase Config File
+        run: |
+          echo "const firebaseConfig = {" > firebase-config.js
+          echo "  apiKey: \"${{ secrets.FIREBASE_API_KEY }}\"," >> firebase-config.js
+          echo "  authDomain: \"${{ secrets.FIREBASE_AUTH_DOMAIN }}\"," >> firebase-config.js
+          echo "  databaseURL: \"${{ secrets.FIREBASE_DATABASE_URL }}\"," >> firebase-config.js
+          echo "  projectId: \"${{ secrets.FIREBASE_PROJECT_ID }}\"," >> firebase-config.js
+          echo "  storageBucket: \"${{ secrets.FIREBASE_STORAGE_BUCKET }}\"," >> firebase-config.js
+          echo "  messagingSenderId: \"${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}\"," >> firebase-config.js
+          echo "  appId: \"${{ secrets.FIREBASE_APP_ID }}\"" >> firebase-config.js
+          echo "};" >> firebase-config.js
+          echo "" >> firebase-config.js # New line
+          echo "// Initialize Firebase" >> firebase-config.js
+          echo "firebase.initializeApp(firebaseConfig);" >> firebase-config.js
+          echo "const database = firebase.database(); // Make database globally available" >> firebase-config.js
+        # If your firebase-config.js is not in the root, adjust the path:
+        # e.g., echo "..." > js/firebase-config.js
+
+      # Step 3: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3 # Or a specific later version
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./ # Deploy the root directory
+          # Optional: If you want to deploy to a specific folder on gh-pages branch:
+          # publish_branch: gh-pages # Default branch for this action
+          # destination_dir: ./ # Deploy to the root of the gh-pages branch
+          # user_name: 'github-actions[bot]'
+          # user_email: 'github-actions[bot]@users.noreply.github.com'
+          # commit_message: 'Deploy to GitHub Pages'
