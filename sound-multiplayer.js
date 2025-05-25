@@ -204,10 +204,26 @@ function stopListening() {
     // Tracks are stopped individually.
   }
 }
-// ... (rest of the file: showStatusOverlay, hideStatusOverlay)
+
+function showStatusOverlay(text) {
+  const overlay = document.getElementById('statusOverlay');
+  overlay.textContent = text;
+  overlay.style.display = 'block';
+}
+
+function hideStatusOverlay() {
+  const overlay = document.getElementById('statusOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
 // Make sure these are exported if not already:
 window.sendPairingRequest = sendPairingRequest;
 window.sendPairingAccept = sendPairingAccept;
 window.sendAck = sendAck; // If you implement ACKs
-window.startListeningForSounds = startListeningForSounds; // Note the new name
-// window.startListeningForMoves is now replaced by startListeningForSounds('move', callback)
+window.startListeningForSounds = startListeningForSounds;
+window.stopListening = stopListening; // Assuming stopListening is defined in this file
+window.sendMoveViaSound = sendMoveViaSound; // Assuming sendMoveViaSound is defined in this file
+
+// Add exports for the overlay functions
+window.showStatusOverlay = showStatusOverlay;
+window.hideStatusOverlay = hideStatusOverlay;
