@@ -24,8 +24,8 @@ const rtcConfig = {
  */
 function initSession(isHost, roomId, externalCallbacks) {
     if (peerConnection) {
-        console.warn("RTC: Session already initialized. Closing previous one.");
-        closeSession();
+        console.warn("RTC: Session already initialized. Closing previous one to prevent issues.");
+        closeSession(); // Ensure clean state before re-initializing
     }
 
     console.log(`RTC: Initializing session for room ${roomId} as ${isHost ? 'Host' : 'Joiner'}`);
@@ -36,10 +36,11 @@ function initSession(isHost, roomId, externalCallbacks) {
 
     try {
         peerConnection = new RTCPeerConnection(rtcConfig);
+        console.log("RTC: RTCPeerConnection created. Initial signalingState:", peerConnection.signalingState);
     } catch (error) {
         console.error("RTC: Failed to create RTCPeerConnection:", error);
         if (onConnectionStateChangeCallback) onConnectionStateChangeCallback("failed");
-        showStatusOverlay("Error: No se pudo crear Peer Connection."); // Show overlay utility
+        showStatusOverlay("Error: No se pudo crear Peer Connection.");
         return;
     }
 
@@ -47,12 +48,13 @@ function initSession(isHost, roomId, externalCallbacks) {
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
             console.log("RTC: Generated ICE candidate:", event.candidate);
-            // Send ICE candidate via Firebase
             if (window.firebaseSignaling && window.firebaseSignaling.sendIceCandidate) {
                 window.firebaseSignaling.sendIceCandidate(event.candidate);
             } else {
                 console.error("RTC: firebaseSignaling.sendIceCandidate is not available.");
             }
+        } else {
+            console.log("RTC: All ICE candidates have been sent.");
         }
     };
 
@@ -63,6 +65,10 @@ function initSession(isHost, roomId, externalCallbacks) {
             onConnectionStateChangeCallback(peerConnection.connectionState);
         }
         // Further handling (e.g., UI updates) can be done in game.js based on the state
+        if (peerConnection && (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'closed')) {
+            // Consider closing the session more formally if not already triggered by game.js
+            // closeSession(); // This might be too aggressive here if game.js handles it.
+        }
     };
     
     // Event handler for receiving a data channel (for the joiner/callee)
@@ -77,25 +83,25 @@ function initSession(isHost, roomId, externalCallbacks) {
         window.firebaseSignaling.init(roomId, isHost ? 'host' : 'joiner', {
             onOffer: async (offer) => {
                 if (!isHost) { // Joiner receives offer
-                    console.log("RTC: Offer received from Firebase signaling.");
+                    console.log("RTC: Offer received from Firebase signaling, passing to _handleOfferAndCreateAnswer.");
                     await _handleOfferAndCreateAnswer(offer);
                 }
             },
-            onAnswer: async (answer) => {
-                if (isHost) { // Host receives answer
-                    console.log("RTC: Answer received from Firebase signaling.");
+            onAnswer: async (answer) => { // Host receives answer
+                if (isHost) {
+                    console.log("RTC: Answer received from Firebase signaling, passing to _handleAnswer.");
                     await _handleAnswer(answer);
                 }
             },
             onIceCandidate: async (candidate) => {
-                console.log("RTC: ICE candidate received from Firebase signaling.");
+                console.log("RTC: ICE candidate received from Firebase signaling, passing to _addIceCandidate.");
                 await _addIceCandidate(candidate);
             },
             onPeerDisconnect: (role) => {
                 console.log(`RTC: Peer (${role}) disconnected signal from Firebase.`);
                 showStatusOverlay("El otro jugador se desconectó.");
                 if (onConnectionStateChangeCallback) onConnectionStateChangeCallback("disconnected");
-                // `closeSession` will be called by game.js or connection state change handler
+                // game.js should handle game state reset and potentially call closeSession()
             }
         });
     } else {
@@ -103,7 +109,7 @@ function initSession(isHost, roomId, externalCallbacks) {
         showStatusOverlay("Error: Falló la inicialización de la señalización.");
         return;
     }
-    console.log("RTC: Session initialized.");
+    console.log("RTC: Session initialized, Firebase signaling listeners active.");
 }
 
 function setupDataChannelEventHandlers() {
@@ -120,7 +126,6 @@ function setupDataChannelEventHandlers() {
 
     dataChannel.onclose = () => {
         console.log('RTC: Data channel is closed.');
-        // Potentially notify game.js if needed, though onconnectionstatechange might cover this
     };
 
     dataChannel.onmessage = (event) => {
@@ -132,7 +137,7 @@ function setupDataChannelEventHandlers() {
             }
         } catch (e) {
             console.warn("RTC: Received non-JSON message or parse error:", event.data, e);
-            if (onDataReceivedCallback) { // Send as raw if not JSON
+            if (onDataReceivedCallback) {
                 onDataReceivedCallback({ type: 'raw', payload: event.data });
             }
         }
@@ -140,7 +145,7 @@ function setupDataChannelEventHandlers() {
 
     dataChannel.onerror = (error) => {
         console.error("RTC: Data Channel Error:", error);
-        showStatusOverlay(`Error en Canal de Datos: ${error.message}`);
+        showStatusOverlay(`Error en Canal de Datos: ${error.message || 'Error desconocido'}`);
     };
 }
 
@@ -154,6 +159,11 @@ async function createOffer() {
         showStatusOverlay("Error: Inicializar sesión RTC primero.");
         return;
     }
+    if (peerConnection.signalingState !== 'stable' && peerConnection.signalingState !== 'new') {
+         console.warn(`RTC (Host): createOffer called in unexpected state: ${peerConnection.signalingState}. Proceeding cautiously.`);
+         // This might indicate a previous offer attempt didn't clean up or a re-negotiation scenario not fully handled.
+    }
+
     if (!window.firebaseSignaling || !window.firebaseSignaling.sendOffer) {
         console.error("RTC: firebaseSignaling.sendOffer is not available.");
         showStatusOverlay("Error: Función de envío de oferta no disponible.");
@@ -163,16 +173,19 @@ async function createOffer() {
     try {
         console.log('RTC: Host creating data channel...');
         dataChannel = peerConnection.createDataChannel("gameDataChannel");
-        setupDataChannelEventHandlers(); // Setup handlers for the created channel
+        setupDataChannelEventHandlers();
 
         console.log('RTC: Host creating offer...');
         const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
         
-        console.log("RTC: Offer created, sending via Firebase signaling.");
+        console.log(`RTC (Host): Offer created. Current signalingState before setLocalDescription(offer): ${peerConnection.signalingState}`);
+        await peerConnection.setLocalDescription(offer);
+        console.log(`RTC (Host): Local description (offer) set. New signalingState: ${peerConnection.signalingState}`); // Should be 'have-local-offer'
+        
+        console.log("RTC: Sending offer via Firebase signaling.");
         window.firebaseSignaling.sendOffer(offer);
     } catch (error) {
-        console.error("RTC: Error creating offer:", error);
+        console.error("RTC: Error creating offer or setting local description:", error);
         showStatusOverlay("Error creando oferta. Ver consola.");
         if (onConnectionStateChangeCallback) onConnectionStateChangeCallback("failed");
     }
@@ -185,27 +198,36 @@ async function createOffer() {
  */
 async function _handleOfferAndCreateAnswer(offer) {
     if (!peerConnection) {
-        console.error("RTC: PeerConnection not initialized for handling offer.");
+        console.error("RTC (Joiner): PeerConnection not initialized for handling offer.");
         return;
     }
     if (!window.firebaseSignaling || !window.firebaseSignaling.sendAnswer) {
-        console.error("RTC: firebaseSignaling.sendAnswer is not available.");
+        console.error("RTC (Joiner): firebaseSignaling.sendAnswer is not available.");
+        return;
+    }
+    if (!offer || !offer.type || !offer.sdp || offer.type.toLowerCase() !== 'offer') {
+        console.error("RTC (Joiner): Received invalid or malformed offer object:", offer);
         return;
     }
 
-    try {
-        console.log("RTC: Joiner setting remote description (offer).");
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        
-        console.log("RTC: Joiner creating answer...");
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
+    console.log(`RTC (Joiner): Received offer. Current signalingState before setRemoteDescription(offer): ${peerConnection.signalingState}`);
 
-        console.log("RTC: Answer created, sending via Firebase signaling.");
+    try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        console.log(`RTC (Joiner): Remote description (offer) set. New signalingState: ${peerConnection.signalingState}`); // Should be 'have-remote-offer'
+        
+        console.log("RTC (Joiner): Creating answer...");
+        const answer = await peerConnection.createAnswer();
+        
+        console.log(`RTC (Joiner): Answer created. Current signalingState before setLocalDescription(answer): ${peerConnection.signalingState}`);
+        await peerConnection.setLocalDescription(answer);
+        console.log(`RTC (Joiner): Local description (answer) set. New signalingState: ${peerConnection.signalingState}`); // Should be 'stable' (if polite peer) or unchanged if rollback
+        
+        console.log("RTC (Joiner): Sending answer via Firebase signaling.");
         window.firebaseSignaling.sendAnswer(answer);
     } catch (error) {
-        console.error("RTC: Error handling offer or creating answer:", error);
-        showStatusOverlay("Error manejando oferta. Ver consola.");
+        console.error("RTC (Joiner): Error handling offer or creating/setting answer:", error);
+        showStatusOverlay("Error procesando oferta o creando respuesta. Ver consola.");
         if (onConnectionStateChangeCallback) onConnectionStateChangeCallback("failed");
     }
 }
@@ -217,16 +239,31 @@ async function _handleOfferAndCreateAnswer(offer) {
  */
 async function _handleAnswer(answer) {
     if (!peerConnection) {
-        console.error("RTC: PeerConnection not initialized for handling answer.");
+        console.error("RTC (Host): PeerConnection not initialized or already closed when trying to handle answer.");
         return;
     }
+
+    console.log(`RTC (Host): Received answer object. Current peerConnection.signalingState: ${peerConnection.signalingState}`);
+
+    if (peerConnection.signalingState !== 'have-local-offer' && peerConnection.signalingState !== 'have-remote-pranswer') {
+        console.error(`RTC (Host): Cannot set remote answer in current signalingState: '${peerConnection.signalingState}'. Expected 'have-local-offer'. Answer processing aborted.`);
+        // This indicates a logic flaw elsewhere if this condition is met.
+        return;
+    }
+
+    if (!answer || !answer.type || !answer.sdp || answer.type.toLowerCase() !== 'answer') {
+        console.error("RTC (Host): Received invalid or malformed answer object:", answer);
+        return;
+    }
+    
     try {
-        console.log("RTC: Host setting remote description (answer).");
+        console.log("RTC (Host): Attempting to set remote description with received answer.");
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log("RTC: Remote description (answer) set. Connection should establish if ICE candidates align.");
+        console.log("RTC (Host): Remote description (answer) successfully set. New signalingState:", peerConnection.signalingState); // Should be 'stable'
     } catch (error) {
-        console.error("RTC: Error handling answer:", error);
-        showStatusOverlay("Error manejando respuesta. Ver consola.");
+        console.error("RTC (Host): Error setting remote description with answer:", error);
+        showStatusOverlay("Error procesando respuesta del par. Ver consola.");
+        if (onConnectionStateChangeCallback) onConnectionStateChangeCallback("failed");
     }
 }
 
@@ -241,28 +278,38 @@ async function _addIceCandidate(candidate) {
         return;
     }
     try {
-        if (candidate) { // Ensure candidate is not null/undefined
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log("RTC: ICE candidate added.");
+        if (candidate && candidate.candidate) { // Check candidate string itself
+            // Only add candidate if remote description is set (or if it's the offerer, after local description)
+            // A common practice is to queue candidates if remote description isn't set yet,
+            // but addIceCandidate() can often handle this if called before setRemoteDescription.
+            // However, adding a check for signalingState can prevent errors.
+            if (peerConnection.remoteDescription || (peerConnection.localDescription && peerConnection.localDescription.type === 'offer')) {
+                 console.log("RTC: Adding received ICE candidate:", candidate);
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } else {
+                console.warn("RTC: Remote description not yet set, queuing or deferring ICE candidate (or check logic):", candidate);
+                // Simple approach: try adding anyway, modern browsers might queue.
+                // More robust: explicitly queue and add later. For now, let's try adding.
+                 await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
         } else {
-            console.warn("RTC: Received null/empty ICE candidate from signaling.");
+            console.log("RTC: Received empty or end-of-candidates signal from Firebase.");
         }
     } catch (error) {
         console.error("RTC: Error adding received ICE candidate:", error);
+        // Errors here can sometimes be ignored if candidates arrive out of order or for a closed connection.
     }
 }
 
 /**
  * Sends a message (object) to the connected peer over the data channel.
- * The message will be JSON.stringified.
- * @param {object} messageObject - The JavaScript object to send.
  */
 function sendMessage(messageObject) {
     if (dataChannel && dataChannel.readyState === 'open') {
         try {
             const messageString = JSON.stringify(messageObject);
             dataChannel.send(messageString);
-            console.log('RTC: Message sent via data channel:', messageObject);
+            // console.log('RTC: Message sent via data channel:', messageObject); // Can be too verbose
         } catch (e) {
             console.error("RTC: Error sending message (serialization or send error):", e, messageObject);
             showStatusOverlay("Error enviando mensaje. Ver consola.");
@@ -283,24 +330,28 @@ function closeSession() {
         dataChannel = null;
     }
     if (peerConnection) {
-        try { peerConnection.close(); } catch (e) { console.warn("RTC: Error closing peer connection", e); }
+        try { 
+            // Log state before closing for diagnostics
+            console.log("RTC: PeerConnection state before close:", peerConnection.signalingState, peerConnection.iceConnectionState, peerConnection.connectionState);
+            peerConnection.close(); 
+        } catch (e) { console.warn("RTC: Error closing peer connection", e); }
         peerConnection = null;
     }
     
     if (window.firebaseSignaling && window.firebaseSignaling.cleanUp) {
-        window.firebaseSignaling.cleanUp(); // Clean up Firebase presence/room
+        window.firebaseSignaling.cleanUp();
     } else {
         console.warn("RTC: firebaseSignaling.cleanUp is not available.");
     }
 
-    if (onConnectionStateChangeCallback) {
-        // Ensure the callback is invoked with a final "closed" state if not already handled
-        // by onconnectionstatechange event.
-        onConnectionStateChangeCallback("closed");
-    }
-    console.log("RTC: Session closed.");
+    // It's important that onConnectionStateChangeCallback is robust enough
+    // to be called with "closed" if the peerConnection was already closed.
+    // The onconnectionstatechange handler should naturally fire a 'closed' event.
+    // if (onConnectionStateChangeCallback) {
+    //     onConnectionStateChangeCallback("closed"); // Can cause duplicate calls if already handled
+    // }
+    console.log("RTC: Session resources released.");
 }
-
 
 // Utility functions (can be kept if game.js relies on them being here)
 function showStatusOverlay(text) {
@@ -328,7 +379,6 @@ window.rtcMultiplayer = {
     createOffer: createOffer,   // Host calls this after initSession
     sendMessage: sendMessage,
     closeSession: closeSession
-    // Offer/Answer/ICE handling is now mostly internal or via Firebase callbacks set up in initSession
 };
 
-console.log("WebRTC multiplayer script (with Firebase signaling integration) loaded.");
+console.log("WebRTC multiplayer script (with Firebase signaling and improved state handling) loaded.");
