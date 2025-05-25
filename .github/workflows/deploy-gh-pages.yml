@@ -1,58 +1,27 @@
 name: Deploy to GitHub Pages
 
+# Controls when the workflow will run
 on:
   push:
     branches:
-      - main # Or your primary branch
+      - main # Or 'master', or whichever branch you use for your main development
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
 
     steps:
+      # Step 1: Check out your repository code
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Or a specific later version
 
-      - name: Create Firebase Config File
-        run: |
-          echo "const firebaseConfig = {" > firebase-config.js
-          echo "  apiKey: \"${{ secrets.FIREBASE_API_KEY }}\"," >> firebase-config.js
-          echo "  authDomain: \"${{ secrets.FIREBASE_AUTH_DOMAIN }}\"," >> firebase-config.js
-          echo "  databaseURL: \"${{ secrets.FIREBASE_DATABASE_URL }}\"," >> firebase-config.js
-          echo "  projectId: \"${{ secrets.FIREBASE_PROJECT_ID }}\"," >> firebase-config.js
-          echo "  storageBucket: \"${{ secrets.FIREBASE_STORAGE_BUCKET }}\"," >> firebase-config.js
-          echo "  messagingSenderId: \"${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}\"," >> firebase-config.js
-          echo "  appId: \"${{ secrets.FIREBASE_APP_ID }}\"" >> firebase-config.js
-          echo "};" >> firebase-config.js
-          echo "" >> firebase-config.js
-          echo "// Initialize Firebase" >> firebase-config.js
-          echo "firebase.initializeApp(firebaseConfig);" >> firebase-config.js
-          echo "const database = firebase.database(); // Make database globally available" >> firebase-config.js
-
-      # ---- NEW STEP ADDED HERE ----
-      - name: Prepare .gitignore for deployment
-        run: |
-          if [ -f .gitignore ]; then
-            echo "Original .gitignore content:"
-            cat .gitignore
-            # Remove the line that ignores firebase-config.js specifically for this deployment
-            # This assumes 'firebase-config.js' is on its own line
-            sed -i '/^firebase-config.js$/d' .gitignore
-            echo "Modified .gitignore content (firebase-config.js line removed if present):"
-            cat .gitignore
-          else
-            echo ".gitignore not found in workspace root."
-          fi
-      # ---- END OF NEW STEP ----
-
+      # Step 2: Deploy to GitHub Pages
+      # This action will take the files from your repository (publish_dir)
+      # and push them to the gh-pages branch.
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v3 # Or a specific later version
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
-          # Optional: If you want to be very explicit about committing changes,
-          # even if only the new firebase-config.js is present.
-          # But the .gitignore modification should be enough.
-          # allow_empty_commit: false # Default is false, usually fine
-          # force_orphan: true # Consider this if you want a clean history on gh-pages each time
-                              # and are sure all necessary files are in publish_dir
+          publish_dir: ./ # Deploy the root directory of your main branch
+          # publish_branch: gh-pages # This is the default, so not strictly needed to specify
+          # cname: your.custom.domain.com # Uncomment and set if you use a custom domain
