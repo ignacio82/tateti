@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Danielle's Ta-Te-Ti</title>
+    <title>Danielle's Ta-Te-Ti with PeerJS</title>
 
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#ff69b4">
@@ -37,18 +37,12 @@
     <div id="results">🦄 <span id="unicornWins">0</span> – ❤️ <span id="heartWins">0</span> – 🤝 <span id="draws">0</span></div>
 
     <div id="qr-display-area" style="display:none; margin-top:20px; margin-bottom:10px; text-align:center; padding:15px; background: #fff8fb; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 300px; margin-left:auto; margin-right:auto;">
-        <h3 style="margin-top:0; color: var(--pink-dark); font-size: 1.1em;">Scan QR Code</h3>
+        <h3 id="qr-title" style="margin-top:0; color: var(--pink-dark); font-size: 1.1em;">Your Peer ID:</h3>
         <canvas id="qr-code-canvas" style="border: 1px solid var(--pink-light); border-radius: 8px;"></canvas>
-        <p style="font-size: 0.9em; margin-top: 10px; color: var(--pink);">Alternatively, copy this text:</p>
-        <textarea id="qr-text-data" rows="3" style="width: 95%; font-size: 0.8em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light);" readonly></textarea>
+        <p style="font-size: 0.9em; margin-top: 10px; color: var(--pink);">Share this ID (or scan QR) with Player 2:</p>
+        <textarea id="qr-text-data" rows="2" style="width: 95%; font-size: 0.9em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light); text-align: center;" readonly></textarea>
     </div>
 
-    <div id="qr-input-area" style="display:none; margin-top:20px; margin-bottom:10px; padding:15px; background: #fff8fb; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 300px; margin-left:auto; margin-right:auto;">
-        <h3 style="margin-top:0; color: var(--pink-dark); font-size: 1.1em;">Input Scanned Data</h3>
-        <textarea id="qr-scanned-data" rows="3" style="width: 95%; font-size: 0.8em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light);" placeholder="Paste data scanned from QR code here..."></textarea>
-        <button id="qr-submit-scanned-data" class="std" style="margin-top:10px; padding: 10px 15px; font-size: 0.9em; width: auto;">Submit Data</button>
-    </div>
-    
     <nav id="side-menu" class="side-menu" aria-label="Opciones">
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
@@ -97,6 +91,6 @@
     font-family: 'Bubblegum Sans', cursive;
   ">Esperando el movimiento del otro jugador...</div>
 
-<script src="game.js"></script> 
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script> <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script> <script src="game.js"></script> 
 </body>
 </html>
