@@ -1,0 +1,96 @@
+
+/* ------------  PALETA  ------------ */
+:root {
+    --pink-light: #ffc0cb;
+    --pink:       #ff69b4;
+    --pink-dark:  #ff1493;
+    --pink-extra: #ffe4e1;
+    --radius: 12px;
+}
+*{box-sizing:border-box;}
+body{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100vh;margin:0;font-family:"Bubblegum Sans",cursive;
+    background:var(--pink-light);color:var(--pink);overflow-x:hidden;
+    transition:background .4s;
+}
+h1{margin:.1em 0 .4em;font-size:clamp(2.2rem,4vw+0.5rem,3.5rem);text-shadow:2px 2px rgba(0,0,0,.1);}
+
+/* ------------  TABLERO  ------------ */
+#game{
+    display:grid;
+    grid-template-columns:repeat(3,min(24vw,120px));
+    grid-template-rows:repeat(3,min(24vw,120px));
+    gap:min(3vw,10px);
+    padding:10px;
+    background:#fff;border:6px solid var(--pink);border-radius:var(--radius);
+    box-shadow:0 6px 18px rgba(0,0,0,.25);user-select:none;
+    transition:border-color .3s,box-shadow .3s;
+}
+.cell{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:clamp(2rem,6vw,4rem);background:var(--pink-extra);border:2px solid #ffb6c1;border-radius:var(--radius);cursor:pointer;transition:background .15s ease;position:relative;overflow:hidden;}
+.cell:hover:not(.disabled){background:var(--pink-light);}
+.cell.disabled{cursor:default;opacity:.7;}
+.cell.rainbow::after{content:"";position:absolute;inset:0;background:linear-gradient(45deg,red,orange,yellow,green,blue,indigo,violet,red);background-size:400% 400%;animation:rb 2s linear infinite;opacity:.7;z-index:0;}
+.cell span{position:relative;z-index:1;}
+@keyframes rb{0%{background-position:0 50%}100%{background-position:100% 50%}}
+@keyframes cellSelectAnim{0%{transform:scale(.9)}100%{transform:scale(1)}}
+
+/* ------------  STATUS  ------------ */
+#status{
+    font-size:clamp(1.2rem,3vw,1.6rem);
+    min-height:2.2rem;text-align:center;
+    transition:transform .3s,color .3s;
+    margin-bottom:clamp(10px,2vh,15px);
+}
+#status.highlight{transform:scale(1.2);color:var(--pink-dark);}
+
+/* ------------  SCORE  ------------ */
+#results{margin-top:clamp(10px,3vh,20px);padding:6px 14px;background:#fff;border:2px dashed var(--pink);border-radius:var(--radius);font-size:clamp(1rem,2.5vw,1.3rem);}
+#results span{min-width:2ch;display:inline-block;font-weight:bold;}
+
+/* ------------  TOP-BAR  ------------ */
+.top-bar{position:fixed;top:10px;left:10px;right:10px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:200;}
+.top-bar button{pointer-events:auto;}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:2rem;padding:4px;line-height:1;color:var(--pink-dark);transition:transform .15s;}
+.icon-btn:hover{transform:scale(1.1);}
+
+/* ------------  SIDE-MENU  ------------ */
+#menu-toggle{font-size:2.2rem;}
+.side-menu{position:fixed;top:0;left:0;height:100vh;width:clamp(250px,70vw,300px);background:var(--pink-light);box-shadow:3px 0 8px rgba(0,0,0,.15);transform:translateX(-100%);transition:transform .3s ease;padding:70px 14px 20px;display:flex;flex-direction:column;gap:18px;z-index:150;overflow-y:auto;}
+.side-menu.open{transform:translateX(0);}
+.side-menu .controls-group{display:flex;flex-direction:column;gap:14px;align-items:center;}
+.side-menu .controls-group>div{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+.side-menu .controls-group>div>span{width:100%;text-align:center;margin-bottom:-5px;font-size:.9rem;color:var(--pink-dark);}
+button.std{padding:8px 20px;font-size:1rem;background:var(--pink);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;transition:filter .15s,box-shadow .15s;}
+button.std:hover{filter:brightness(.9);}
+button.std.active{outline:3px solid var(--pink-dark);filter:brightness(.88);box-shadow:0 0 5px var(--pink-dark);}
+
+#restartBtn{display:none;}
+
+/* Confetti  */
+.confetti{position:fixed;border-radius:4px;pointer-events:none;z-index:1000;}
+@keyframes fall{to{transform:translateY(110vh) rotateZ(720deg);opacity:0;}}
+
+/* Draw Animation Styles */
+#status.highlight-draw-flash{animation:drawStatusFlash .3s 6 alternate;}
+@keyframes drawStatusFlash{from{color:var(--pink-dark);transform:scale(1.25);}to{color:var(--pink);transform:scale(1);}}
+#game.highlight-draw-border{animation:drawBoardFlash .3s 6 alternate;}
+@keyframes drawBoardFlash{0%{border-color:var(--pink-dark);box-shadow:0 0 15px var(--pink-dark);}50%{border-color:var(--pink-light);box-shadow:0 0 5px var(--pink-light);}100%{border-color:var(--pink-dark);box-shadow:0 0 15px var(--pink-dark);}}
+
+/* dark theme modifiers  */
+body.dark-theme{background:#2b2b2b;color:#ffc0cb;}
+body.dark-theme #game{background:#3d3d3d;border-color:var(--pink-dark);}
+body.dark-theme .cell{background:#4a4a4a;border-color:#5a5a5a;color:#fff;}
+body.dark-theme #results{background:#3d3d3d;border-color:var(--pink-dark);color:#fff;}
+body.dark-theme .side-menu{background:#3d3d3d;}
+body.dark-theme .side-menu .controls-group>div>span{color:var(--pink-light);}
+body.dark-theme .icon-btn{color:var(--pink-light);}
+
+@media(max-width:500px){
+    #game{gap:min(2vw,8px);}
+    h1{font-size:clamp(2rem,7vw,2.7rem);}
+    #results{font-size:clamp(.9rem,3vw,1rem);}
+    .side-menu{padding-top:60px;}
+    .icon-btn{font-size:1.8rem;}
+    #menu-toggle{font-size:2rem;}
+}

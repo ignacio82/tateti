@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Danielle's Ta-Te-Ti</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ff69b4">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <link href="https://fonts.googleapis.com/css2?family=Bubblegum+Sans&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="top-bar">
+        <button id="menu-toggle" class="icon-btn" aria-label="Menú">☰</button>
+        <button id="restart-icon" class="icon-btn" aria-label="Reiniciar">🔄</button>
+    </div>
+
+    <h1>Ta-Te-Ti</h1>
+    <div id="status" aria-live="polite">Turno del 🦄 Unicornio</div>
+
+    <div id="game" role="grid" aria-label="Tablero de juego">
+        <div class="cell" role="button" aria-label="Celda 1" data-index="0"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 2" data-index="1"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 3" data-index="2"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 4" data-index="3"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 5" data-index="4"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 6" data-index="5"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 7" data-index="6"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 8" data-index="7"><span></span></div>
+        <div class="cell" role="button" aria-label="Celda 9" data-index="8"><span></span></div>
+    </div>
+
+    <div id="results">🦄 <span id="unicornWins">0</span> – ❤️ <span id="heartWins">0</span> – 🤝 <span id="draws">0</span></div>
+
+    <div id="qr-display-area" style="display:none; margin-top:20px; margin-bottom:10px; text-align:center; padding:15px; background: #fff8fb; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 300px; margin-left:auto; margin-right:auto;">
+        <h3 style="margin-top:0; color: var(--pink-dark); font-size: 1.1em;">Scan QR Code</h3>
+        <canvas id="qr-code-canvas" style="border: 1px solid var(--pink-light); border-radius: 8px;"></canvas>
+        <p style="font-size: 0.9em; margin-top: 10px; color: var(--pink);">Alternatively, copy this text:</p>
+        <textarea id="qr-text-data" rows="3" style="width: 95%; font-size: 0.8em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light);" readonly></textarea>
+    </div>
+
+    <div id="qr-input-area" style="display:none; margin-top:20px; margin-bottom:10px; padding:15px; background: #fff8fb; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 300px; margin-left:auto; margin-right:auto;">
+        <h3 style="margin-top:0; color: var(--pink-dark); font-size: 1.1em;">Input Scanned Data</h3>
+        <textarea id="qr-scanned-data" rows="3" style="width: 95%; font-size: 0.8em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light);" placeholder="Paste data scanned from QR code here..."></textarea>
+        <button id="qr-submit-scanned-data" class="std" style="margin-top:10px; padding: 10px 15px; font-size: 0.9em; width: auto;">Submit Data</button>
+    </div>
+    
+    <nav id="side-menu" class="side-menu" aria-label="Opciones">
+        <div class="controls-group">
+            <div><span>Modo de Juego:</span></div>
+                <div class="mode" aria-label="Seleccionar modo">
+                    <button id="pvpLocalBtn" class="std mode-btn active">Mismo Dispositivo</button>
+                    <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                    <button id="joinGameBtn" class="std mode-btn">Unirse a Juego Remoto</button>
+                    <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+                </div>
+            <div><span>Dificultad CPU:</span></div>
+            <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;">
+                <button id="easyBtn" class="std difficulty-btn">Fácil</button>
+                <button id="mediumBtn" class="std difficulty-btn active">Normal</button>
+                <button id="hardBtn" class="std difficulty-btn">Difícil</button>
+            </div>
+            <div><span>Quién Empieza:</span></div>
+            <div class="game-start-options" aria-label="Seleccionar quién empieza">
+                <button id="player1StartsBtn" class="std start-option-btn">Jugador 1</button>
+                <button id="randomStartsBtn" class="std start-option-btn">Aleatorio</button>
+                <button id="loserStartsBtn" class="std start-option-btn">Perdedor</button>
+            </div>
+            <button id="changeSymbolsBtn" class="std" style="margin-top:10px;">Cambiar símbolos</button>
+        </div>
+        <div style="margin-top:auto; display:flex; justify-content:space-around; padding-top:20px;">
+            <button id="soundToggle" class="icon-btn" aria-label="Sonido">🔊</button>
+            <button id="themeToggle" class="icon-btn" aria-label="Tema">🌙</button>
+        </div>
+    </nav>
+
+    <button id="restartBtn" aria-hidden="true" style="display:none;">Restart</button>
+
+  <div id="statusOverlay" style="
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #fff4f6;
+    color: #ff1493;
+    border: 2px solid #ff69b4;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    z-index: 1001;
+    display: none;
+    font-family: 'Bubblegum Sans', cursive;
+  ">Esperando el movimiento del otro jugador...</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script> <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script src="webrtc-multiplayer.js"></script> 
+<script src="firebase-signaling.js"></script> 
+<script src="game.js"></script> 
+</body>
+</html>
