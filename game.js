@@ -532,16 +532,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // If it's my turn (either local, vs CPU, or remote), the icon to place is myEffectiveIcon.
-        if (!makeMove(idx, myEffectiveIcon)) return;
+        // If it's my turn (either local, vs CPU, or remote), the icon to place is currentPlayer.
+        // **MODIFIED LINE BELOW**
+        if (!makeMove(idx, currentPlayer)) return;
 
         // If remote play and it was my turn, send the move.
         if (pvpRemoteActive && gamePaired) { // isMyTurnInRemote was true to get here
             window.peerJsMultiplayer?.send({ type: 'move', index: idx });
         }
 
-        const win = checkWin(myEffectiveIcon);
-        if(win){ endGame(myEffectiveIcon,win); return; }
+        const win = checkWin(currentPlayer); // Check win for the player who just moved
+        if(win){ endGame(currentPlayer,win); return; }
         if(checkDraw()){ endDraw(); return; }
 
         switchPlayer(); // Determine next player
@@ -557,6 +558,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(()=>{ if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
         } else { // Local PvP turn switch, or Player's turn (vs CPU) after CPU moved
             statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
+            // Ensure board is clickable for local PvP next turn
+            setBoardClickable(true);
         }
     }
 
@@ -597,8 +600,15 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = `${getPlayerName(winnerSymbol)} GANA!`; statusDiv.classList.add('highlight');
         lastWinner = winnerSymbol; previousGameExists = true;
 
-        if(winnerSymbol === myEffectiveIcon) myWins++;
-        else if (winnerSymbol === opponentEffectiveIcon) opponentWins++; // opponentEffectiveIcon is defined for PvP/CPU
+        // Determine who the winnerSymbol corresponds to for score update
+        if (pvpRemoteActive || vsCPU) { // For remote or CPU games
+             if(winnerSymbol === myEffectiveIcon) myWins++;
+             else if (winnerSymbol === opponentEffectiveIcon) opponentWins++;
+        } else { // For local PvP games
+            if (winnerSymbol === gameP1Icon) myWins++; // P1 on board is effectively "my" score slot
+            else if (winnerSymbol === gameP2Icon) opponentWins++; // P2 on board is effectively "opponent" score slot
+        }
+
 
         localStorage.setItem('myWinsTateti',myWins); localStorage.setItem('opponentWinsTateti',opponentWins);
         updateScoreboard();
@@ -637,11 +647,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Scoreboard consistently shows "my" info first, then "opponent's" info
-        let myDisplayName = getPlayerName(myEffectiveIcon);
-        let opponentDisplayName = (vsCPU || pvpRemoteActive) ? getPlayerName(opponentEffectiveIcon) : getPlayerName(gameP2Icon); // For local PvP, gameP2Icon is opponent
+        let myDisplayName = getPlayerName(myEffectiveIcon); // This is always "me" the user of the device
+        let opponentDisplayName;
+
+        if (pvpRemoteActive) {
+            opponentDisplayName = getPlayerName(opponentEffectiveIcon); // The remote opponent
+        } else if (vsCPU) {
+            opponentDisplayName = getPlayerName(opponentEffectiveIcon); // The CPU
+        } else { // Local PvP
+            // We need to show Player 1 (gameP1Icon) and Player 2 (gameP2Icon) on the scoreboard
+            // If myEffectiveIcon is gameP1Icon, then "my" score is P1's, and "opponent" is P2's
+            // If myEffectiveIcon is gameP2Icon (e.g. P2 selected it), then "my" score is P2's, and "opponent" is P1's
+            // This gets a bit complex. For local PvP, it's simpler to just display based on gameP1Icon and gameP2Icon directly.
+            // Let's assume "my" score display always corresponds to gameP1Icon, and "opponent" to gameP2Icon for local.
+            myDisplayName = getPlayerName(gameP1Icon); // Player 1 on the board
+            opponentDisplayName = getPlayerName(gameP2Icon); // Player 2 on the board
+        }
+
 
         const resultsDiv = document.getElementById('results');
         if (resultsDiv) {
+            // myWins and opponentWins are always from the perspective of the device user vs "other".
+            // For local PvP, we need to decide if myWins/opponentWins should map to P1/P2 or stay as user-centric.
+            // The current endGame logic for local PvP maps gameP1Icon win to myWins, gameP2Icon win to opponentWins.
+            // So, this display should be consistent with that.
             resultsDiv.innerHTML = `${myDisplayName} <span id="myWinsSpan">${myWins}</span> – ${opponentDisplayName} <span id="opponentWinsSpan">${opponentWins}</span> – 🤝 <span id="drawsSpan">${draws}</span>`;
         }
     }
