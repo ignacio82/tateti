@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ta-Te-Ti Deluxe</title>
 
-    <!-- ────────  PWA  ──────── -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#ff69b4">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -163,7 +162,6 @@
 
     <button id="restartBtn" aria-hidden="true" style="display:none;">Restart</button>
 
-  <!-- Status overlay for listening mode -->
   <div id="statusOverlay" style="
     position: fixed;
     bottom: 20px;
@@ -180,7 +178,7 @@
     display: none;
     font-family: 'Bubblegum Sans', cursive;
   ">Esperando el movimiento del otro jugador...</div>
-  
+
 <script src="sound-multiplayer.js"></script>
 <script>
 /****************************************************
@@ -191,7 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const cells             = document.querySelectorAll('.cell');
     const statusDiv         = document.getElementById('status');
     const restartBtn        = document.getElementById('restartBtn');
-    const pvpBtn            = document.getElementById('pvpBtn');
+    // pvpBtn is pvpLocalBtn now, adjust if needed or keep separate
+    const pvpLocalBtn       = document.getElementById('pvpLocalBtn');
+    const pvpRemoteBtn      = document.getElementById('pvpRemoteBtn'); // New Button
     const cpuBtn            = document.getElementById('cpuBtn');
     const difficultyDiv     = document.querySelector('.difficulty');
     const easyBtn           = document.getElementById('easyBtn');
@@ -220,12 +220,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     restartIcon.addEventListener('click', () => {
         removeConfetti();
+        hideStatusOverlay(); // Hide overlay on restart
+        stopListening(); // Stop listening if active
         restartBtn.click();
         if (sideMenu.classList.contains('open')) sideMenu.classList.remove('open');
     });
 
     /* ----------  ESTADO  ---------- */
     let board, currentPlayer, gameActive, vsCPU = false, difficulty = 'medium';
+    let pvpRemoteActive = false; // New state for remote play
+    let isMyTurnInRemote = true; // To track turns in remote play. Assume player 1 (device 1) starts.
+
     let soundEnabled = !(localStorage.getItem('soundDisabled') === 'true');
     const symbolSet = [
         {player1:'🦄',player2:'❤️'},{player1:'🐱',player2:'🐶'},
@@ -294,24 +299,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /* ----------  LÓGICA PRINCIPAL  ---------- */
-    function setBoardClickable(c){
+    function setBoardClickable(clickable){
         cells.forEach(n=>{
-            if(c){ board[n.dataset.index] ? n.classList.add('disabled') : n.classList.remove('disabled'); }
+            if(clickable){ board[n.dataset.index] ? n.classList.add('disabled') : n.classList.remove('disabled'); }
             else  n.classList.add('disabled');
         });
     }
+
     function init(){
         removeConfetti();
+        hideStatusOverlay();
+        stopListening(); // Ensure listener is stopped on init
+
         board=Array(9).fill(null);
-        vsCPU=cpuBtn.classList.contains('active');
+        vsCPU = cpuBtn.classList.contains('active');
+        pvpRemoteActive = pvpRemoteBtn.classList.contains('active'); // Check remote mode
+
         difficulty = easyBtn.classList.contains('active')?'easy':hardBtn.classList.contains('active')?'hard':'medium';
-        switch(whoGoesFirstSetting){
-            case 'random': currentPlayer = Math.random()<.5?currentSymbols.player1:currentSymbols.player2; break;
-            case 'loser':
-                currentPlayer = (!previousGameExists||lastWinner===null)?currentSymbols.player1:(lastWinner===currentSymbols.player1?currentSymbols.player2:currentSymbols.player1);
-                break;
-            default: currentPlayer = currentSymbols.player1;
+
+        // Determine starting player
+        // For PvP Remote, Player 1 (this device) always starts as '🦄' initially.
+        // The other device should be manually set/known to be Player 2 '❤️'.
+        // 'whoGoesFirstSetting' might need adjustment or specific handling for remote play if you want it to be configurable.
+        if (pvpRemoteActive) {
+            // Let's assume this device is Player 1 if it initiates the remote game or if 'player1StartsBtn' is active.
+            // You might need a more robust way to determine who is Player 1 and Player 2 in a remote session.
+            // For simplicity, we can assume the one who selected 'Distintos Dispositivos' is Player 1 for the first game.
+            currentPlayer = currentSymbols.player1;
+            isMyTurnInRemote = true; // Player 1 starts
+        } else {
+             switch(whoGoesFirstSetting){
+                case 'random': currentPlayer = Math.random()<.5?currentSymbols.player1:currentSymbols.player2; break;
+                case 'loser':
+                    currentPlayer = (!previousGameExists||lastWinner===null)?currentSymbols.player1:(lastWinner===currentSymbols.player1?currentSymbols.player2:currentSymbols.player1);
+                    break;
+                default: currentPlayer = currentSymbols.player1;
+            }
         }
+
         gameActive=true;
         cells.forEach(c=>{c.querySelector('span').textContent='';c.classList.remove('rainbow','disabled');});
         statusDiv.textContent=`Turno del ${getPlayerName(currentPlayer)}`;
@@ -320,52 +345,124 @@ document.addEventListener('DOMContentLoaded', () => {
         gameBoardEl.style.borderColor='';gameBoardEl.style.boxShadow='';
         updateAllUIToggleButtons();
         playSound('reset');
-        if(vsCPU && currentPlayer===currentSymbols.player2){
+
+        if (pvpRemoteActive) {
+            if (isMyTurnInRemote) {
+                statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
+                setBoardClickable(true);
+            } else {
+                statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`;
+                setBoardClickable(false);
+                listenForRemoteMove();
+            }
+        } else if(vsCPU && currentPlayer===currentSymbols.player2){
             setBoardClickable(false);
             setTimeout(()=>{cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
-        } else setBoardClickable(true);
+        } else {
+            setBoardClickable(true);
+        }
         sideMenu.classList.remove('open');
     }
+
     function getPlayerName(sym){
         if(sym===currentSymbols.player1)return `${sym} ${sym==='🦄'?'Unicornio':sym==='🐱'?'Gatito':sym==='🌞'?'Sol':'Equis'}`;
         if(sym===currentSymbols.player2)return `${sym} ${sym==='❤️'?'Corazón':sym==='🐶'?'Perrito':sym==='🌙'?'Luna':'Círculo'}`;
         return sym;
     }
+
     function updateAllUIToggleButtons(){
-        pvpBtn.classList.toggle('active',!vsCPU);
-        cpuBtn.classList.toggle('active',vsCPU);
-        difficultyDiv.style.display = vsCPU?'flex':'none';
+        pvpLocalBtn.classList.toggle('active', !vsCPU && !pvpRemoteActive);
+        pvpRemoteBtn.classList.toggle('active', pvpRemoteActive);
+        cpuBtn.classList.toggle('active', vsCPU);
+
+        difficultyDiv.style.display = vsCPU ? 'flex' : 'none';
         easyBtn.classList.toggle('active',difficulty==='easy');
         mediumBtn.classList.toggle('active',difficulty==='medium');
         hardBtn.classList.toggle('active',difficulty==='hard');
+
+        // "Who starts" options might be less relevant or behave differently for PvP Remote
+        // For now, they primarily affect local PvP and vs CPU
+        document.querySelector('.game-start-options').style.display = pvpRemoteActive ? 'none' : 'flex';
         player1StartsBtn.classList.toggle('active',whoGoesFirstSetting==='player1');
         randomStartsBtn.classList.toggle('active',whoGoesFirstSetting==='random');
         loserStartsBtn.classList.toggle('active',whoGoesFirstSetting==='loser');
+
         themeToggle.textContent=document.body.classList.contains('dark-theme')?'☀️':'🌙';
         soundToggle.textContent=soundEnabled?'🔊':'🔇';
     }
 
     function handleCellClick(e){
         const idx=+e.currentTarget.dataset.index;
-        if(!gameActive||board[idx]!==null) return;
+        if(!gameActive || board[idx]!==null || (pvpRemoteActive && !isMyTurnInRemote)) return;
+
         makeMove(idx,currentPlayer);
+
+        if (pvpRemoteActive) {
+            sendMoveViaSound(idx); // Send move to remote player
+        }
+
         const win=checkWin(currentPlayer);
         if(win){ endGame(currentPlayer,win); return; }
         if(checkDraw()){ endDraw(); return; }
+
         switchPlayer();
-        if(vsCPU && currentPlayer===currentSymbols.player2){
+
+        if (pvpRemoteActive) {
+            isMyTurnInRemote = false;
+            statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`;
+            setBoardClickable(false);
+            listenForRemoteMove();
+        } else if(vsCPU && currentPlayer===currentSymbols.player2){
             setBoardClickable(false);
             setTimeout(()=>{cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
         }
     }
+
     function makeMove(i,p){
+        if (board[i] !== null) return false; // Cell already taken
         board[i]=p;
         cells[i].querySelector('span').textContent=p;
         cells[i].classList.add('disabled');
         cells[i].style.animation='cellSelectAnim .3s ease';
         setTimeout(()=>cells[i].style.animation='',300);
         playSound('move');
+        return true;
     }
+
+    function listenForRemoteMove() {
+        if (!pvpRemoteActive || isMyTurnInRemote || !gameActive) return;
+        showStatusOverlay(`Esperando el movimiento de ${getPlayerName(currentPlayer)}... 🔊`);
+        startListeningForMoves(handleRemoteMoveDetected);
+    }
+
+    function handleRemoteMoveDetected(index) {
+        hideStatusOverlay();
+        if (!gameActive || board[index] !== null) {
+            // Invalid move received (e.g., cell taken, or game ended)
+            // Re-listen or handle error
+            if (gameActive) listenForRemoteMove();
+            return;
+        }
+
+        makeMove(index, currentPlayer);
+
+        const win = checkWin(currentPlayer);
+        if (win) {
+            endGame(currentPlayer, win);
+            return;
+        }
+        if (checkDraw()) {
+            endDraw();
+            return;
+        }
+
+        switchPlayer();
+        isMyTurnInRemote = true;
+        statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
+        setBoardClickable(true);
+    }
+
+
     function cpuMove(){
         if(!gameActive) return;
         let idx;
@@ -399,27 +496,43 @@ document.addEventListener('DOMContentLoaded', () => {
         return c.find(x=>x.every(i=>b[i]===p))||null;
     }
     function checkDraw(b=board){ return b.every(c=>c!==null)&&!checkWin(currentSymbols.player1,b)&&!checkWin(currentSymbols.player2,b);}
+
     function endGame(p,wCells){
         if(!gameActive) return;
         gameActive=false; setBoardClickable(false);
+        hideStatusOverlay();
+        stopListening();
+
         if(wCells) wCells.forEach(i=>cells[i].classList.add('rainbow'));
         statusDiv.textContent=`¡${getPlayerName(p)} ganó!`; statusDiv.classList.add('highlight');
         if(p===currentSymbols.player1){unicornWins++;localStorage.setItem('unicornWins',unicornWins);lastWinner=currentSymbols.player1;}
         else{heartWins++;localStorage.setItem('heartWins',heartWins);lastWinner=currentSymbols.player2;}
         previousGameExists=true; updateScoreboard(); playSound('win'); launchConfetti();
-        setTimeout(()=>{removeConfetti(); init();},AUTO_RESTART_DELAY_WIN);
+
+        const autoRestartDelay = pvpRemoteActive ? AUTO_RESTART_DELAY_WIN + 2000 : AUTO_RESTART_DELAY_WIN; // Longer delay for remote to show result
+        setTimeout(()=>{removeConfetti(); init();}, autoRestartDelay);
     }
+
     function endDraw(){
         if(!gameActive) return;
         gameActive=false; setBoardClickable(false);
+        hideStatusOverlay();
+        stopListening();
+
         statusDiv.textContent='¡Empate!'; statusDiv.classList.add('highlight');
         draws++;localStorage.setItem('draws',draws);lastWinner=null;previousGameExists=true;updateScoreboard();playSound('draw');
         const d=playDrawAnimation();
-        setTimeout(()=>init(),Math.max(d+200,AUTO_RESTART_DELAY_DRAW));
+
+        const autoRestartDelay = pvpRemoteActive ? Math.max(d+200,AUTO_RESTART_DELAY_DRAW) + 2000 : Math.max(d+200,AUTO_RESTART_DELAY_DRAW);
+        setTimeout(()=>init(), autoRestartDelay);
     }
+
     function switchPlayer(){
         currentPlayer = (currentPlayer===currentSymbols.player1)?currentSymbols.player2:currentSymbols.player1;
-        statusDiv.textContent=`Turno del ${getPlayerName(currentPlayer)}`;
+        // Status update is handled by the calling function (handleCellClick or handleRemoteMoveDetected) for PvP Remote
+        if (!pvpRemoteActive) {
+            statusDiv.textContent=`Turno del ${getPlayerName(currentPlayer)}`;
+        }
     }
     function updateScoreboard(){
         unicornSpan.textContent=unicornWins;heartSpan.textContent=heartWins;drawsSpan.textContent=draws;
@@ -448,7 +561,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function toggleSound(){
         soundEnabled=!soundEnabled;localStorage.setItem('soundDisabled',!soundEnabled);
-        if(soundEnabled) initAudioOnInteraction(); else if(audioCtx&&audioCtx.state==='running') audioCtx.suspend();
+        if(soundEnabled) initAudioOnInteraction(); else {
+            if(audioCtx&&audioCtx.state==='running') audioCtx.suspend();
+            stopListening(); // Stop listening if sound is disabled
+            hideStatusOverlay();
+        }
         updateAllUIToggleButtons(); if(soundEnabled) playSound('move');
     }
     function changeSymbols(){
@@ -465,10 +582,50 @@ document.addEventListener('DOMContentLoaded', () => {
     /* ----------  EVENT LISTENERS  ---------- */
     cells.forEach(c=>{c.addEventListener('click',handleCellClick);c.setAttribute('tabindex','0');c.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();c.click();}});});
     restartBtn.addEventListener('click',init);
-    pvpBtn.addEventListener('click',()=>{vsCPU=false;updateAllUIToggleButtons();init();});
-    cpuBtn.addEventListener('click',()=>{vsCPU=true;updateAllUIToggleButtons();init();});
-    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{difficulty=e.target.id.replace('Btn','');updateAllUIToggleButtons();playSound('move');if(!gameActive) init();}));
-    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn.addEventListener('click',e=>{whoGoesFirstSetting=e.target.id.replace('StartsBtn','');localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting);updateAllUIToggleButtons();playSound('move');if(!gameActive||board.every(c=>c===null)) init();}));
+
+    pvpLocalBtn.addEventListener('click',()=>{
+        vsCPU=false;
+        pvpRemoteActive = false;
+        stopListening(); hideStatusOverlay();
+        updateAllUIToggleButtons();
+        init();
+    });
+    pvpRemoteBtn.addEventListener('click', () => {
+        vsCPU = false;
+        pvpRemoteActive = true;
+        // For remote play, Player 1 (this device) might start as Unicorn.
+        // The other player needs to know they are Heart.
+        // You might want a more explicit way for players to choose/be assigned symbols or starting player.
+        isMyTurnInRemote = true; // Default: this device starts as Player 1
+        // Consider if 'player1StartsBtn' should determine who is player 1 in a remote game.
+        // if (whoGoesFirstSetting === 'player1') isMyTurnInRemote = true;
+        // else if (whoGoesFirstSetting === 'random') isMyTurnInRemote = Math.random() < 0.5;
+        // This needs careful handling for two devices.
+        updateAllUIToggleButtons();
+        init();
+    });
+    cpuBtn.addEventListener('click',()=>{
+        vsCPU=true;
+        pvpRemoteActive = false;
+        stopListening(); hideStatusOverlay();
+        updateAllUIToggleButtons();
+        init();
+    });
+
+    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{difficulty=e.target.id.replace('Btn','');updateAllUIToggleButtons();playSound('move');if(!gameActive && !pvpRemoteActive) init();})); // Avoid re-init if remote game active and settings changed
+    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn.addEventListener('click',e=>{
+        whoGoesFirstSetting=e.target.id.replace('StartsBtn','');
+        localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting);
+        updateAllUIToggleButtons();
+        playSound('move');
+        // For PvP Remote, deciding who starts needs coordination.
+        // If one player sets "Player 1 starts", the other needs to know they are Player 2.
+        // This simple setup assumes the 'player1StartsBtn' makes THIS device Player 1.
+        if (pvpRemoteActive) {
+            isMyTurnInRemote = (whoGoesFirstSetting === 'player1'); // Or handle 'random' / 'loser' if you have a way to sync that
+        }
+        if(!gameActive||board.every(c=>c===null)) init();
+    }));
     changeSymbolsBtn.addEventListener('click',changeSymbols);
     themeToggle.addEventListener('click',toggleTheme);
     soundToggle.addEventListener('click',toggleSound);
@@ -478,6 +635,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if(localStorage.getItem('darkTheme')==='true') document.body.classList.add('dark-theme');
     soundToggle.textContent=soundEnabled?'🔊':'🔇';
     updateScoreboard();
+    // Set default mode to local PvP if nothing else is active
+    if (!cpuBtn.classList.contains('active') && !pvpRemoteBtn.classList.contains('active')) {
+        pvpLocalBtn.classList.add('active');
+    }
     init();
 });
 
