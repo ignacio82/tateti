@@ -3,7 +3,7 @@
   "short_name": "Ta-Te-Ti",
   "description": "Tic-Tac-Toe con unicornios, corazones y confeti ❤️🦄",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#ffc0cb",
   "theme_color": "#ff69b4",
   "lang": "es",

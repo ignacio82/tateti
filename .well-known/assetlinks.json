@@ -3,7 +3,7 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "xyz.appmaker.clhnso",
+      "package_name": "fyi.martinez.tateti.twa",
       "sha256_cert_fingerprints": ["D5:54:4A:06:10:B6:8A:CE:23:E6:13:1B:BB:80:49:FD:45:0F:3A:A1:2D:B4:49:39:58:CA:3D:32:71:0A:B6:4D"]
     }
   }
