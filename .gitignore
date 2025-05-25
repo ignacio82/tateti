@@ -1,7 +1,6 @@
 # Android Keystore (Sensitive - DO NOT COMMIT)
 android.keystore
 *.keystore
-
 # Bubblewrap/Android generated files & build artifacts
 .gradle/
 app/
@@ -14,13 +13,12 @@ gradlew.bat
 settings.gradle
 manifest-checksum.txt
 store_icon.png
-
 # Generated APKs and Bundles
 *.apk
 *.apk.idsig
 *.aab
-
 # IDE specific files (optional, but good practice)
 .idea/
 *.iml
 .DS_Store
+.Rproj.user
