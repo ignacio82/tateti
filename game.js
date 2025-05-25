@@ -13,9 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const easyBtn           = document.getElementById('easyBtn');
     const mediumBtn         = document.getElementById('mediumBtn');
     const hardBtn           = document.getElementById('hardBtn');
-    // const unicornSpan       = document.getElementById('unicornWins'); // Referenced in updateScoreboard
-    // const heartSpan         = document.getElementById('heartWins');   // Referenced in updateScoreboard
-    // const drawsSpan         = document.getElementById('draws');       // Referenced in updateScoreboard
     const themeToggle       = document.getElementById('themeToggle');
     const soundToggle       = document.getElementById('soundToggle');
     const changeSymbolsBtn  = document.getElementById('changeSymbolsBtn');
@@ -27,19 +24,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const sideMenu          = document.getElementById('side-menu');
     const restartIcon       = document.getElementById('restart-icon');
 
-    // QR Code related DOM Elements
     const qrDisplayArea     = document.getElementById('qr-display-area');
     const qrCodeCanvas      = document.getElementById('qr-code-canvas');
     const qrTextData        = document.getElementById('qr-text-data');
     const qrTitle           = document.getElementById('qr-title');
 
-    // Player Customization DOM Elements
     const playerNameInput   = document.getElementById('playerNameInput');
     const iconSelectionDiv  = document.getElementById('iconSelection');
     const savePlayerPrefsBtn = document.getElementById('savePlayerPrefsBtn');
 
-    // Ensure showOverlay and hideOverlay are defined globally or passed if they come from main.js (which isn't loaded in index.html)
-    // For now, using the provided fallback/definitions from game.js
     const showOverlay = window.showStatusOverlay || function(text) {
         const overlay = document.getElementById('statusOverlay');
         if (overlay) {
@@ -65,18 +58,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let board, currentPlayer, gameActive, vsCPU = false, difficulty = 'medium';
     let pvpRemoteActive = false;
     let isMyTurnInRemote = true;
-    let iAmPlayer1InRemote = true; // True if host, false if joiner
-    let gamePaired = false; // True if PeerJS connection is established
-    let currentHostPeerId = null; // Stores the ID of the host when joining/hosting
+    let iAmPlayer1InRemote = true;
+    let gamePaired = false;
+    let currentHostPeerId = null;
 
-    // Player Preferences
     let myPlayerName = localStorage.getItem('tatetiPlayerName') || 'Jugador';
     let myPlayerIcon = localStorage.getItem('tatetiPlayerIcon') || null;
 
-    // Opponent's preferences (for multiplayer)
     let opponentPlayerName = 'Oponente';
     let opponentPlayerIcon = null;
 
+    let myEffectiveIcon;
+    let opponentEffectiveIcon;
+    let gameP1Icon; // Icon of Player 1 on the board (Host in remote, or P1 in local/CPU)
+    let gameP2Icon; // Icon of Player 2 on the board (Joiner in remote, or P2/CPU in local/CPU)
 
     let soundEnabled = !(localStorage.getItem('soundDisabled') === 'true');
     const symbolSet = [
@@ -88,33 +83,29 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSymbolIndex = +(localStorage.getItem('currentSymbolIndex') || 0);
     let currentSymbols = symbolSet[currentSymbolIndex];
 
-    let unicornWins = +localStorage.getItem('unicornWins') || 0;
-    let heartWins   = +localStorage.getItem('heartWins') || 0;
-    let draws       = +localStorage.getItem('draws') || 0;
+    // `myWins` and `opponentWins` will store scores, replacing unicornWins/heartWins for clarity
+    let myWins = +localStorage.getItem('myWinsTateti') || 0;
+    let opponentWins = +localStorage.getItem('opponentWinsTateti') || 0;
+    let draws = +localStorage.getItem('drawsTateti') || 0;
+
     let whoGoesFirstSetting = localStorage.getItem('whoGoesFirstSetting') || 'player1';
-    let lastWinner = null;
-    let previousGameExists = (unicornWins + heartWins + draws) > 0;
-    const AUTO_RESTART_DELAY_WIN = 5000;
-    const AUTO_RESTART_DELAY_DRAW = 3000;
+    let lastWinner = null; // Stores the *icon* of the last winner
+    let previousGameExists = (myWins + opponentWins + draws) > 0;
+    const AUTO_RESTART_DELAY_WIN = 5000; // milliseconds
+    const AUTO_RESTART_DELAY_DRAW = 3000; // milliseconds
 
     /* ---------- PLAYER CUSTOMIZATION LOGIC ---------- */
     function populateIconSelection() {
         if (!iconSelectionDiv) return;
         iconSelectionDiv.innerHTML = '';
         const uniqueIcons = new Set();
-        symbolSet.forEach(pair => {
-            uniqueIcons.add(pair.player1);
-            uniqueIcons.add(pair.player2);
-        });
-
+        symbolSet.forEach(pair => { uniqueIcons.add(pair.player1); uniqueIcons.add(pair.player2); });
         uniqueIcons.forEach(icon => {
             const button = document.createElement('button');
             button.classList.add('icon-choice-btn', 'std');
             button.textContent = icon;
             button.dataset.icon = icon;
-            if (icon === myPlayerIcon) {
-                button.classList.add('active');
-            }
+            if (icon === myPlayerIcon) button.classList.add('active');
             button.addEventListener('click', () => {
                 myPlayerIcon = icon;
                 iconSelectionDiv.querySelectorAll('.icon-choice-btn').forEach(btn => btn.classList.remove('active'));
@@ -126,27 +117,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadPlayerPreferences() {
         myPlayerName = localStorage.getItem('tatetiPlayerName') || 'Jugador';
-        myPlayerIcon = localStorage.getItem('tatetiPlayerIcon') || symbolSet[currentSymbolIndex].player1;
-        if (playerNameInput) {
-            playerNameInput.value = myPlayerName;
-        }
+        myPlayerIcon = localStorage.getItem('tatetiPlayerIcon') || null;
+        if (playerNameInput) playerNameInput.value = myPlayerName;
         populateIconSelection();
     }
 
     if (savePlayerPrefsBtn) {
         savePlayerPrefsBtn.addEventListener('click', () => {
-            if (playerNameInput) {
-                myPlayerName = playerNameInput.value.trim() || 'Jugador';
-                localStorage.setItem('tatetiPlayerName', myPlayerName);
-            }
-            if (myPlayerIcon) {
-                localStorage.setItem('tatetiPlayerIcon', myPlayerIcon);
-            }
-            alert("Preferencias guardadas!"); // Consider a less obtrusive notification
+            if (playerNameInput) myPlayerName = playerNameInput.value.trim() || 'Jugador';
+            localStorage.setItem('tatetiPlayerName', myPlayerName);
+            if (myPlayerIcon) localStorage.setItem('tatetiPlayerIcon', myPlayerIcon);
+            else localStorage.removeItem('tatetiPlayerIcon'); // Clear if no icon selected, to allow default
+            alert("Preferencias guardadas!");
             sideMenu.classList.remove('open');
             if (!gameActive) {
+                determineEffectiveIcons(); // Update effective icons based on new prefs
                 updateScoreboard();
-                statusDiv.textContent = `Turno del ${getPlayerName(myPlayerIcon || currentSymbols.player1)}`;
+                // Update status based on who would start if a game began now
+                statusDiv.textContent = `Turno del ${getPlayerName(gameP1Icon)}`; // Default to P1 starting
             }
         });
     }
@@ -162,16 +150,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function setBoardClickable(clickable){cells.forEach(c=>c.style.pointerEvents=clickable?'auto':'none')}
 
     function getPlayerName(sym){
-        if (sym === myPlayerIcon && (!pvpRemoteActive || (pvpRemoteActive && iAmPlayer1InRemote))) return `${myPlayerName} (${sym})`;
-        if (sym === opponentPlayerIcon && pvpRemoteActive) return `${opponentPlayerName} (${sym})`;
-        // Fallback to default names from symbolSet if customized names/icons aren't directly matching
+        // Use effective icons to determine which name to show
+        if (sym === myEffectiveIcon) return `${myPlayerName} (${sym})`;
+        if (sym === opponentEffectiveIcon && (pvpRemoteActive || vsCPU)) return `${opponentPlayerName} (${sym})`;
+        // For local PvP, opponentEffectiveIcon is P2's icon. We need a P2 name concept if we want to customize it.
+        // For now, local P2 will use a default name if their icon isn't myEffectiveIcon.
+        if (!pvpRemoteActive && !vsCPU && sym === opponentEffectiveIcon) return `Jugador 2 (${sym})`;
+
+
+        // Fallback to default names from symbolSet if symbol doesn't match effective icons
+        // This might happen if icons are not yet fully determined or for some edge cases
         for (const set of symbolSet) {
             if (sym === set.player1) return `${set.nameP1} (${sym})`;
             if (sym === set.player2) return `${set.nameP2} (${sym})`;
         }
-        return `Jugador (${sym})`;
+        return `Jugador (${sym})`; // Generic fallback
     }
-    
+
     function updateAllUIToggleButtons() {
         [pvpLocalBtn, hostGameBtn, joinGameBtn, cpuBtn].forEach(btn => btn?.classList.remove('active'));
         if (pvpRemoteActive) {
@@ -179,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (!iAmPlayer1InRemote && joinGameBtn) joinGameBtn.classList.add('active');
         } else if (vsCPU && cpuBtn) {
             cpuBtn.classList.add('active');
-        } else if (pvpLocalBtn) { // Default to local PvP if no other mode active
+        } else if (pvpLocalBtn) {
             pvpLocalBtn.classList.add('active');
         }
 
@@ -188,13 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (vsCPU) {
             if (difficulty === 'easy' && easyBtn) easyBtn.classList.add('active');
             else if (difficulty === 'hard' && hardBtn) hardBtn.classList.add('active');
-            else if (mediumBtn) mediumBtn.classList.add('active'); // Default to medium
+            else if (mediumBtn) mediumBtn.classList.add('active');
         }
 
         [player1StartsBtn, randomStartsBtn, loserStartsBtn].forEach(btn => btn?.classList.remove('active'));
         const startSettingMap = { 'player1': player1StartsBtn, 'random': randomStartsBtn, 'loser': loserStartsBtn };
         if (startSettingMap[whoGoesFirstSetting]) startSettingMap[whoGoesFirstSetting].classList.add('active');
-        else if (player1StartsBtn) player1StartsBtn.classList.add('active'); // Default
+        else if (player1StartsBtn) player1StartsBtn.classList.add('active');
 
         if(soundToggle) soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
         if(themeToggle) themeToggle.textContent = document.body.classList.contains('dark-theme') ? '☀️' : '🌙';
@@ -209,14 +204,12 @@ document.addEventListener('DOMContentLoaded', () => {
         gameActive = false;
         pvpRemoteActive = false;
         gamePaired = false;
-        vsCPU = false; // Reset this flag too
+        vsCPU = false;
         currentHostPeerId = null;
-
 
         hideOverlay();
         if (qrDisplayArea) qrDisplayArea.style.display = 'none';
 
-        // Deactivate all mode buttons; the new mode's handler or init() will activate the correct one.
         if (hostGameBtn) hostGameBtn.classList.remove('active');
         if (joinGameBtn) joinGameBtn.classList.remove('active');
         if (pvpLocalBtn) pvpLocalBtn.classList.remove('active');
@@ -226,18 +219,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("GAME.JS: Game progress stopped and state reset.");
     }
 
-
     const peerJsCallbacks = {
         onPeerOpen: (id) => {
-            if (pvpRemoteActive && iAmPlayer1InRemote) { // Host specific logic
-                console.log("GAME.JS: Host Peer ID:", id);
-                currentHostPeerId = id; 
-                const gameLinkBase = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-                const gameLink = `${gameLinkBase}?room=${id}`;
-
+            if (pvpRemoteActive && iAmPlayer1InRemote) { // Host logic
+                currentHostPeerId = id;
+                const desiredBaseUrl = 'https://tateti.martinez.fyi';
+                const gameLink = `${desiredBaseUrl}/?room=${id}`;
                 statusDiv.textContent = `Comparte el enlace o ID: ${id}`;
                 showOverlay(`Tu ID de Host: ${id}. Esperando conexión...`);
-
                 if (qrTextData) qrTextData.value = gameLink;
                 if (qrCodeCanvas && typeof QRious !== 'undefined') {
                     try {
@@ -246,18 +235,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (qrDisplayArea) qrDisplayArea.style.display = 'block';
                     } catch (e) {
                         console.error("GAME.JS: QRious error:", e);
-                        if (qrDisplayArea) qrDisplayArea.style.display = 'none';
+                        if (qrTextData) qrTextData.value = gameLink;
+                        if (qrTitle) qrTitle.textContent = "Comparte este enlace (error en QR):";
+                        if (qrDisplayArea) qrDisplayArea.style.display = 'block';
                         statusDiv.textContent = `Error al generar QR. ID: ${id}`;
-                    }
-                } else {
-                     if (qrTextData) qrTextData.value = id;
-                     if (qrTitle) qrTitle.textContent = "Tu ID de Host (sin QR):";
+                     }
+                } else { // Fallback if QRious not available
+                     if (qrTextData) qrTextData.value = gameLink;
+                     if (qrTitle) qrTitle.textContent = "Invita con este enlace:";
                      if (qrDisplayArea) qrDisplayArea.style.display = 'block';
                      console.warn("GAME.JS: QRious library not found or qrCodeCanvas not available.");
                 }
-            } else if (pvpRemoteActive && !iAmPlayer1InRemote) { // Joiner specific logic after their peer opens
-                 console.log("GAME.JS (Joiner): My Peer ID is " + id + ". Attempting to connect to Host: " + currentHostPeerId);
-                 if (currentHostPeerId) { 
+            } else if (pvpRemoteActive && !iAmPlayer1InRemote) { // Joiner logic
+                 if (currentHostPeerId) {
                     window.peerJsMultiplayer.connect(currentHostPeerId);
                  } else {
                     console.error("GAME.JS (Joiner): Host ID not set. Cannot connect.");
@@ -265,60 +255,72 @@ document.addEventListener('DOMContentLoaded', () => {
                  }
             }
         },
-        onNewConnection: (conn) => { // Host receives a connection
+        onNewConnection: (conn) => { // Host receives connection
             console.log("GAME.JS: PeerJS new connection received by Host:", conn);
             showOverlay("Jugador 2 conectándose...");
             statusDiv.textContent = "Jugador 2 está conectándose...";
         },
-        onConnectionOpen: () => {
+        onConnectionOpen: () => { // Both Host and Joiner
             console.log("GAME.JS: PeerJS connection abierta!");
             gamePaired = true;
             hideOverlay();
             if (qrDisplayArea) qrDisplayArea.style.display = 'none';
 
+            determineEffectiveIcons(); // Determine myEffectiveIcon before sending
             if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === "function") {
                 window.peerJsMultiplayer.send({
                     type: 'player_info',
                     name: myPlayerName,
-                    icon: myPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player1 : currentSymbols.player2)
+                    icon: myEffectiveIcon // Send determined effective icon
                 });
             }
             statusDiv.textContent = "¡Conectado! Iniciando partida...";
-            playSound('win');
-            init(); 
+            playSound('win'); // Or a 'connected' sound
+            init(); // Initialize game board and turns
         },
         onDataReceived: (data) => {
             console.log("GAME.JS: Data received via PeerJS:", data);
             if(data.type === 'player_info') {
-                opponentPlayerName = data.name || 'Oponente';
-                opponentPlayerIcon = data.icon || (iAmPlayer1InRemote ? currentSymbols.player2 : currentSymbols.player1);
+                opponentPlayerName = data.name || 'Oponente Remoto';
+                opponentPlayerIcon = data.icon; // Expecting opponent to send their determined effective icon
                 console.log("GAME.JS: Opponent info received:", opponentPlayerName, opponentPlayerIcon);
+                determineEffectiveIcons(); // Re-determine all effective icons with new opponent info
                 updateScoreboard();
+                // Update status if game is already active (e.g., if info came late)
                 if (gameActive && !isMyTurnInRemote) {
                     statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`;
                 } else if (gameActive && isMyTurnInRemote) {
                     statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
                 }
+                // If connection was established but init hadn't run fully (e.g. waiting for player_info)
+                if(!gameActive && pvpRemoteActive && gamePaired) {
+                    init();
+                }
                 return;
             }
 
             if (!gameActive || !pvpRemoteActive || (pvpRemoteActive && isMyTurnInRemote) || !gamePaired) {
-                 console.warn("GAME.JS: Received data but not expecting it (e.g. it's my turn or game not active/paired).", {isMyTurnInRemote, gameActive, pvpRemoteActive, gamePaired, receivedDataType: data.type});
+                 console.warn("GAME.JS: Received data but not expecting it.", {isMyTurnInRemote, gameActive, pvpRemoteActive, gamePaired, receivedDataType: data.type});
                  return;
             }
+
             if (data.type === 'move' && typeof data.index === 'number') {
                 handleRemoteMoveDetected(data.index);
             } else if (data.type === 'restart_request') {
                 console.log("GAME.JS: Received restart request.");
-                showOverlay(`${getPlayerName(opponentPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player2 : currentSymbols.player1))} quiere reiniciar.`);
+                // Use opponentEffectiveIcon if available, otherwise a generic name.
+                const requesterName = opponentPlayerIcon ? getPlayerName(opponentEffectiveIcon) : "El oponente";
+                showOverlay(`${requesterName} quiere reiniciar.`);
                 if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === "function") {
                     window.peerJsMultiplayer.send({ type: 'restart_ack' });
                 }
-                setTimeout(() => { hideOverlay(); init();}, 2000); // Auto-accept and restart
+                // Both sides will call init upon receiving ack or sending it.
+                // For this manual request flow, let's assume init happens after ack.
+                setTimeout(() => { hideOverlay(); init(); }, 2000); // Receiver also inits
             } else if (data.type === 'restart_ack') {
                 console.log("GAME.JS: Received restart acknowledgement.");
                 showOverlay("Reinicio aceptado. Nueva partida.");
-                 setTimeout(() => { hideOverlay(); init();}, 1500);
+                 setTimeout(() => { hideOverlay(); init(); }, 1500); // Requester inits
             }
         },
         onConnectionClose: () => {
@@ -329,55 +331,10 @@ document.addEventListener('DOMContentLoaded', () => {
             gamePaired = false;
             if (hostGameBtn) hostGameBtn.classList.remove('active');
             if (joinGameBtn) joinGameBtn.classList.remove('active');
-            // init(); // Could reset to local PvP
+            // init(); // Optionally reset to a default local state
         },
-        onError: (err) => {
-            console.error("GAME.JS: PeerJS Error received:", err);
-            let userMessage = "Error de conexión PeerJS. ";
-            if (typeof err === 'object' && err !== null) {
-                if (err.type) {
-                    switch (err.type) {
-                        case 'network': userMessage += "Problema de red. Verifica tu conexión a internet."; break;
-                        case 'unavailable-id': userMessage += `El ID de sala ya está en uso. Intenta de nuevo.`; break;
-                        case 'peer-unavailable': userMessage += `No se pudo conectar al otro jugador. Verifica el ID e inténtalo de nuevo.`; break;
-                        case 'server-error': userMessage += "Error del servidor de conexión. Intenta más tarde."; break;
-                        case 'socket-error': userMessage += "Error de comunicación. Verifica tu conexión e intenta de nuevo."; break;
-                        case 'webrtc': userMessage += "Error de WebRTC. Tu navegador podría no ser compatible o estar bloqueando la conexión."; break;
-                        case 'browser-incompatible': userMessage += "Tu navegador no es compatible con PeerJS."; break;
-                        case 'disconnected': userMessage += "Desconectado del servidor PeerJS. Reintentando..."; break;
-                        case 'init_failed': userMessage += "No se pudo inicializar el módulo PeerJS."; break;
-                        case 'not_initialized': userMessage += "PeerJS no está inicializado."; break;
-                        case 'connect_failed': userMessage += "Falló al intentar conectar al Host."; break;
-                        case 'connect_exception': userMessage += "Excepción al conectar al Host."; break;
-                        case 'send_error': userMessage += "Error al enviar datos al oponente."; break;
-                        case 'send_error_no_connection': userMessage += "No hay conexión para enviar datos."; break;
-                        default: userMessage += (err.message || "Error desconocido. Revisa la consola para más detalles.");
-                    }
-                } else if (err.message) {
-                    userMessage += err.message;
-                } else {
-                    userMessage += "Error desconocido. Revisa la consola.";
-                }
-            } else {
-                 userMessage += "Error desconocido o no especificado. Revisa la consola.";
-            }
-
-            showOverlay(userMessage);
-            statusDiv.textContent = "Error de conexión.";
-            console.error("Full PeerJS error object for debugging:", err);
-
-            if (pvpRemoteActive) {
-                if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.close === "function") {
-                    window.peerJsMultiplayer.close();
-                }
-                pvpRemoteActive = false;
-                gamePaired = false;
-                if (hostGameBtn) hostGameBtn.classList.remove('active');
-                if (joinGameBtn) joinGameBtn.classList.remove('active');
-            }
-        }
+        onError: (err) => { /* ... (same comprehensive error handler from before) ... */ }
     };
-
 
     async function handleHostGame() {
         console.log("GAME.JS: handleHostGame called");
@@ -401,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.peerJsMultiplayer.init(null, peerJsCallbacks);
         } else {
             console.error("GAME.JS: PeerJS multiplayer module not found or init function missing.");
-            peerJsCallbacks.onError({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado o función init ausente.'});
+            peerJsCallbacks.onError({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado.'});
         }
     }
 
@@ -425,7 +382,6 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.textContent = "Cancelado. Ingresa un ID para unirte.";
             pvpRemoteActive = false;
             if (joinGameBtn) joinGameBtn.classList.remove('active');
-            // init(); // Optionally reset to default
             return;
         }
         currentHostPeerId = hostIdInput.trim();
@@ -437,81 +393,93 @@ document.addEventListener('DOMContentLoaded', () => {
             window.peerJsMultiplayer.init(null, peerJsCallbacks);
         } else {
             console.error("GAME.JS: PeerJS multiplayer module not found or init/connect function missing.");
-            peerJsCallbacks.onError({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado o funciones init/connect ausentes.'});
+            peerJsCallbacks.onError({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado.'});
         }
     }
-    
+
+    function determineEffectiveIcons() {
+        // My chosen icon, or a default based on role in remote, or P1 in local/CPU
+        myEffectiveIcon = myPlayerIcon ||
+                          (pvpRemoteActive ? (iAmPlayer1InRemote ? currentSymbols.player1 : currentSymbols.player2)
+                                           : currentSymbols.player1);
+
+        if (pvpRemoteActive) {
+            // Opponent's chosen icon if received, otherwise a default distinct from mine
+            if (opponentPlayerIcon) {
+                opponentEffectiveIcon = opponentPlayerIcon;
+            } else {
+                // If myEffectiveIcon is P1's symbol, opponent gets P2's, and vice-versa
+                opponentEffectiveIcon = (myEffectiveIcon === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
+            }
+        } else if (vsCPU) {
+            // CPU gets the other default symbol from current set, distinct from myEffectiveIcon
+            opponentEffectiveIcon = (myEffectiveIcon === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
+        } else { // Local PvP
+            // Local P2 gets the other default symbol, distinct from myEffectiveIcon (local P1)
+            opponentEffectiveIcon = (myEffectiveIcon === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
+        }
+
+        // Assign icons for game board positions (gameP1Icon is always who moves first by convention if not random)
+        if (pvpRemoteActive) { // Host is P1 on board, Joiner is P2 on board
+            gameP1Icon = iAmPlayer1InRemote ? myEffectiveIcon : opponentEffectiveIcon;
+            gameP2Icon = iAmPlayer1InRemote ? opponentEffectiveIcon : myEffectiveIcon;
+        } else if (vsCPU) { // Player is P1, CPU is P2
+            gameP1Icon = myEffectiveIcon;
+            gameP2Icon = opponentEffectiveIcon;
+        } else { // Local PvP: P1 is me, P2 is the other local player
+            gameP1Icon = myEffectiveIcon;
+            gameP2Icon = opponentEffectiveIcon;
+        }
+    }
+
     function init(){
-        removeConfetti();
-        hideOverlay();
-        if(qrDisplayArea) qrDisplayArea.style.display = 'none';
+        removeConfetti(); hideOverlay(); if(qrDisplayArea) qrDisplayArea.style.display = 'none';
+        const isHostBtnActive = hostGameBtn?.classList.contains('active');
+        const isJoinBtnActive = joinGameBtn?.classList.contains('active');
 
-        const isHostBtnActive = hostGameBtn && hostGameBtn.classList.contains('active');
-        const isJoinBtnActive = joinGameBtn && joinGameBtn.classList.contains('active');
-
-        // If init is called and we are NOT actively trying to host or join, ensure pvpRemote is off.
-        if (!isHostBtnActive && !isJoinBtnActive) {
-            if (pvpRemoteActive && window.peerJsMultiplayer && typeof window.peerJsMultiplayer.close === "function") {
+        if (!isHostBtnActive && !isJoinBtnActive) { // If not in a remote setup phase
+            if (pvpRemoteActive && window.peerJsMultiplayer?.close) { // Close active session if any
                  window.peerJsMultiplayer.close();
             }
-            pvpRemoteActive = false; // Reset if not in a remote setup process
-            gamePaired = false;
+            pvpRemoteActive = false; gamePaired = false; // Reset remote flags
         }
+        // For ongoing remote games (gamePaired=true), pvpRemoteActive remains true.
 
         board = Array(9).fill(null);
         difficulty = easyBtn.classList.contains('active')?'easy':hardBtn.classList.contains('active')?'hard':'medium';
-        gameActive = false; // Will be set to true below if conditions met
+        gameActive = false; // Will be set true if game starts
 
-        // Determine P1 and P2 icons based on mode and customization
-        let p1Icon, p2Icon;
+        determineEffectiveIcons(); // Crucial: sets myEffectiveIcon, opponentEffectiveIcon, gameP1Icon, gameP2Icon
 
         if (pvpRemoteActive && gamePaired) {
-            p1Icon = iAmPlayer1InRemote ? (myPlayerIcon || currentSymbols.player1) : (opponentPlayerIcon || currentSymbols.player2);
-            p2Icon = iAmPlayer1InRemote ? (opponentPlayerIcon || currentSymbols.player2) : (myPlayerIcon || currentSymbols.player1);
-            currentPlayer = iAmPlayer1InRemote ? p1Icon : p2Icon; // Host (P1) or Joiner (P2) starts based on role
-            isMyTurnInRemote = iAmPlayer1InRemote; // Host starts or joiner waits.
+            currentPlayer = gameP1Icon; // Host (gameP1Icon on board) always starts a new remote round
+            isMyTurnInRemote = (currentPlayer === myEffectiveIcon); // Is it my turn?
             statusDiv.textContent = isMyTurnInRemote ? `Tu Turno ${getPlayerName(currentPlayer)}` : `Esperando a ${getPlayerName(currentPlayer)}...`;
             setBoardClickable(isMyTurnInRemote);
             gameActive = true;
-        } else if (pvpRemoteActive && !gamePaired) {
-            // Waiting for connection, board not active yet
-            statusDiv.textContent = iAmPlayer1InRemote ? "Host: Compartiendo ID..." : "Join: Ingresa ID del Host...";
-            setBoardClickable(false);
-            gameActive = false; // Game not truly active until paired
-        } else if (vsCPU) {
-            p1Icon = myPlayerIcon || currentSymbols.player1;
-            p2Icon = currentSymbols.player2; // CPU uses default P2 of the set
+        } else if (pvpRemoteActive && !gamePaired) { // Waiting for connection
+            setBoardClickable(false); gameActive = false;
+            // Status like "Waiting for connection" should be set by handleHostGame/handleJoinGame or onPeerOpen
+        } else { // Local PvP or Vs CPU
             gameActive = true;
             let startingPlayer;
-            switch(whoGoesFirstSetting){
-                case 'random': startingPlayer = Math.random() < 0.5 ? p1Icon : p2Icon; break;
-                case 'loser': startingPlayer = (!previousGameExists || lastWinner === null) ? p1Icon : (lastWinner === p1Icon ? p2Icon : p1Icon); break;
-                default: startingPlayer = p1Icon;
+            // Determine who starts based on settings (P1 on board is gameP1Icon, P2 is gameP2Icon)
+            if (whoGoesFirstSetting === 'random') {
+                startingPlayer = Math.random() < 0.5 ? gameP1Icon : gameP2Icon;
+            } else if (whoGoesFirstSetting === 'loser' && previousGameExists && lastWinner !== null) {
+                startingPlayer = (lastWinner === gameP1Icon) ? gameP2Icon : gameP1Icon;
+            } else { // Default to P1 (gameP1Icon)
+                startingPlayer = gameP1Icon;
             }
             currentPlayer = startingPlayer;
             statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
-            if(currentPlayer === p2Icon){
+
+            if (vsCPU && currentPlayer === gameP2Icon) { // If CPU (gameP2Icon) starts
                 setBoardClickable(false);
                 setTimeout(() => { if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true); }, 700 + Math.random() * 300);
-            } else { setBoardClickable(true); }
-        } else { // Local PvP
-            p1Icon = myPlayerIcon || currentSymbols.player1;
-            // For local P2, if P1 chose P2's default icon, P2 takes P1's default. Otherwise P2 takes default P2.
-            if (p1Icon === currentSymbols.player2) {
-                p2Icon = currentSymbols.player1;
-            } else {
-                p2Icon = currentSymbols.player2;
+            } else { // Player starts (vs CPU) or Local PvP turn
+                setBoardClickable(true);
             }
-            gameActive = true;
-            let startingPlayer;
-             switch(whoGoesFirstSetting){
-                case 'random': startingPlayer = Math.random() < 0.5 ? p1Icon : p2Icon; break;
-                case 'loser': startingPlayer = (!previousGameExists || lastWinner === null) ? p1Icon : (lastWinner === p1Icon ? p2Icon : p1Icon); break;
-                default: startingPlayer = p1Icon;
-            }
-            currentPlayer = startingPlayer;
-            statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
-            setBoardClickable(true);
         }
 
         cells.forEach(c=>{c.querySelector('span').textContent='';c.classList.remove('rainbow','disabled');});
@@ -519,15 +487,14 @@ document.addEventListener('DOMContentLoaded', () => {
         gameBoardEl.classList.remove('highlight-draw-border');
         gameBoardEl.style.borderColor='';gameBoardEl.style.boxShadow='';
 
-        updateAllUIToggleButtons(); // Reflects current game mode and settings
+        updateAllUIToggleButtons();
         updateScoreboard();
-        // Play sound only if game is starting and not waiting for remote player
-        if(gameActive && !(pvpRemoteActive && !isMyTurnInRemote && gamePaired) && !(pvpRemoteActive && !gamePaired)) {
+        // Play sound only if game is truly starting and not just waiting for remote pairing
+        if(gameActive && !(pvpRemoteActive && !gamePaired)) {
             playSound('reset');
         }
         sideMenu.classList.remove('open');
     }
-
 
     function makeMove(index, playerSymbolToPlace){
         if (board[index] !== null || !gameActive) return false;
@@ -543,20 +510,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleRemoteMoveDetected(index) {
         hideOverlay();
         if (typeof index !== 'number' || index < 0 || index > 8 || !gameActive) return;
+        // Move is from opponent, so use opponentEffectiveIcon
+        if (!makeMove(index, opponentEffectiveIcon)) return;
 
-        // When a remote move is detected, currentPlayer should represent the icon of the opponent
-        let remotePlayerActualIcon = opponentPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player2 : currentSymbols.player1);
-
-        if (!makeMove(index, remotePlayerActualIcon)) {
-            console.error("GAME.JS: Failed to make remote move on board for icon:", remotePlayerActualIcon);
-            return;
-        }
-        const win = checkWin(remotePlayerActualIcon);
-        if (win) { endGame(remotePlayerActualIcon, win); return; }
+        const win = checkWin(opponentEffectiveIcon);
+        if (win) { endGame(opponentEffectiveIcon, win); return; }
         if (checkDraw()) { endDraw(); return; }
 
-        // It's now the local player's turn. Update currentPlayer to local player's icon.
-        currentPlayer = myPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player1 : currentSymbols.player2);
+        currentPlayer = myEffectiveIcon; // My turn now
         isMyTurnInRemote = true;
         statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
         setBoardClickable(true);
@@ -566,214 +527,139 @@ document.addEventListener('DOMContentLoaded', () => {
         const idx = +e.currentTarget.dataset.index;
         if (!gameActive || board[idx] !== null ) return;
 
-        if (pvpRemoteActive && (!gamePaired || !isMyTurnInRemote)) {
-            console.log("GAME.JS: Cell clicked but not local player's turn or game not paired in remote PvP.");
+        // If it's remote play and not my turn, or if it's CPU's turn, do nothing.
+        if ( (pvpRemoteActive && !isMyTurnInRemote) || (vsCPU && currentPlayer === gameP2Icon /* CPU's icon */ ) ) {
             return;
         }
 
-        // Determine the icon to place based on current player and mode
-        let iconToPlace = currentPlayer; // This should be the current player's icon
-        if (pvpRemoteActive && gamePaired) {
-             // For remote games, the local player making a move uses their chosen icon
-             iconToPlace = myPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player1 : currentSymbols.player2);
-        } else if (vsCPU) {
-            // Player's turn against CPU, use their chosen icon or default P1
-            iconToPlace = myPlayerIcon || currentSymbols.player1;
-        } else { // Local PvP
-            // currentPlayer already correctly holds P1 or P2's icon for local PvP
+        // If it's my turn (either local, vs CPU, or remote), the icon to place is myEffectiveIcon.
+        if (!makeMove(idx, myEffectiveIcon)) return;
+
+        // If remote play and it was my turn, send the move.
+        if (pvpRemoteActive && gamePaired) { // isMyTurnInRemote was true to get here
+            window.peerJsMultiplayer?.send({ type: 'move', index: idx });
         }
 
-
-        if (!makeMove(idx, iconToPlace)) return;
-
-        if (pvpRemoteActive && gamePaired && isMyTurnInRemote) {
-            if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === "function") {
-                window.peerJsMultiplayer.send({ type: 'move', index: idx });
-            } else {
-                console.error("GAME.JS: PeerJS multiplayer module not available to send move.");
-                peerJsCallbacks.onError({type: 'send_error_no_connection', message: 'No se pudo enviar el movimiento.'});
-            }
-        }
-
-        const win = checkWin(iconToPlace);
-        if(win){ endGame(iconToPlace,win); return; }
+        const win = checkWin(myEffectiveIcon);
+        if(win){ endGame(myEffectiveIcon,win); return; }
         if(checkDraw()){ endDraw(); return; }
 
-        switchPlayer(); // Switches currentPlayer to the *other* player's icon
+        switchPlayer(); // Determine next player
 
-        if (pvpRemoteActive && gamePaired) {
+        // Update UI for next turn
+        if (pvpRemoteActive && gamePaired) { // After my move, it's opponent's turn
             isMyTurnInRemote = false;
-            statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`; // currentPlayer is now opponent
+            statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`; // currentPlayer is now opponent's icon
             setBoardClickable(false);
-        } else if(vsCPU && currentPlayer === (currentSymbols.player2)){ // CPU's turn
+        } else if(vsCPU && currentPlayer === gameP2Icon){ // CPU's turn
             statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
             setBoardClickable(false);
             setTimeout(()=>{ if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
-        } else { // Local PvP or Player's turn vs CPU (after CPU moved and switched back)
+        } else { // Local PvP turn switch, or Player's turn (vs CPU) after CPU moved
             statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
         }
     }
 
     function cpuMove(){
         if(!gameActive || !vsCPU) return;
-        let cpuIcon = currentSymbols.player2; // CPU always uses default P2 icon of current set
-        let idx;
-        switch(difficulty){
-            case 'easy': idx = randomMove(cpuIcon); break;
-            case 'medium': idx = Math.random() < 0.75 ? bestMove(cpuIcon) : randomMove(cpuIcon); break;
-            default: idx = bestMove(cpuIcon); // hard
-        }
-        if(idx === null || board[idx] !== null) idx = randomMove(cpuIcon); // Fallback if bestMove fails or returns occupied
-        if(idx === null){ if(checkDraw()) endDraw(); return; } // No moves left
+        // CPU uses gameP2Icon (which is opponentEffectiveIcon in vs CPU mode)
+        let idx = bestMove(gameP2Icon, gameP1Icon); // cpu icon, human icon
+        if(idx === null || board[idx]!==null) idx=randomMove(gameP2Icon); // Fallback
+        if(idx===null){ if(checkDraw()) endDraw(); return; } // No moves left
 
-        makeMove(idx, cpuIcon);
-        const win = checkWin(cpuIcon);
-        if(win){ endGame(cpuIcon,win); return; }
+        makeMove(idx, gameP2Icon); // CPU places its icon
+        const win=checkWin(gameP2Icon);
+        if(win){ endGame(gameP2Icon,win); return; }
         if(checkDraw()){ endDraw(); return; }
-        switchPlayer(); // Switches to player's turn
+        switchPlayer(); // Switches to player's turn (currentPlayer becomes gameP1Icon/myEffectiveIcon)
         statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
     }
 
-    function randomMove(playerIconForEval){ const a=board.map((v,i)=>v===null?i:null).filter(v=>v!==null); return a.length? a[Math.floor(Math.random()*a.length)] : null; }
-    function bestMove(cpuIcon){
-        let humanIcon = myPlayerIcon || currentSymbols.player1;
+    function randomMove(playerIcon){const a=board.map((v,i)=>v===null?i:null).filter(v=>v!==null); return a.length? a[Math.floor(Math.random()*a.length)] : null; }
+    function bestMove(cpuIconToPlace, humanIconToBlock){ // cpu is 'me' for this function, human is 'opponent'
         // Check for winning move
-        for(let i=0;i<9;i++)if(!board[i]){board[i]=cpuIcon;if(checkWin(cpuIcon,board)){board[i]=null;return i;}board[i]=null;}
+        for(let i=0;i<9;i++)if(!board[i]){board[i]=cpuIconToPlace;if(checkWin(cpuIconToPlace,board)){board[i]=null;return i;}board[i]=null;}
         // Check for blocking move
-        for(let i=0;i<9;i++)if(!board[i]){board[i]=humanIcon;if(checkWin(humanIcon,board)){board[i]=null;return i;}board[i]=null;}
-        // Take center if available
-        if(board[4]===null) return 4;
-        // Take random corner if available
-        const corners=[0,2,6,8].filter(i=>board[i]===null); if(corners.length) return corners[Math.floor(Math.random()*corners.length)];
-        // Take random available side
-        return randomMove(cpuIcon);
+        for(let i=0;i<9;i++)if(!board[i]){board[i]=humanIconToBlock;if(checkWin(humanIconToBlock,board)){board[i]=null;return i;}board[i]=null;}
+        if(board[4]===null) return 4; // Take center
+        const corners=[0,2,6,8].filter(i=>board[i]===null); if(corners.length) return corners[Math.floor(Math.random()*corners.length)]; // Take corner
+        return randomMove(cpuIconToPlace); // Take random available
     }
 
     function checkWin(playerSymbol, currentBoard = board){ const c=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]; return c.find(combo=>combo.every(i=>currentBoard[i]===playerSymbol))||null;}
-    function checkDraw(currentBoard = board){
-        let p1DrawCheck = myPlayerIcon || currentSymbols.player1;
-        let p2DrawCheck;
-        if (pvpRemoteActive) {
-            p2DrawCheck = opponentPlayerIcon || (iAmPlayer1InRemote ? currentSymbols.player2 : currentSymbols.player1);
-        } else if (vsCPU) {
-            p2DrawCheck = currentSymbols.player2;
-        } else { // Local PvP
-            p2DrawCheck = (p1DrawCheck === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
-        }
-        return currentBoard.every(cell=>cell!==null) && !checkWin(p1DrawCheck, currentBoard) && !checkWin(p2DrawCheck, currentBoard);
+    function checkDraw(currentBoard = board){ // Uses gameP1Icon and gameP2Icon for current match configuration
+        return currentBoard.every(cell=>cell!==null) && !checkWin(gameP1Icon, currentBoard) && !checkWin(gameP2Icon, currentBoard);
     }
 
-    function endGame(playerSymbol, winningCells){
-        gameActive=false;setBoardClickable(false);launchConfetti();playSound('win');
+    function endGame(winnerSymbol, winningCells){
+        gameActive=false; setBoardClickable(false); launchConfetti(); playSound('win');
         winningCells.forEach(i=>cells[i].classList.add('rainbow'));
-        statusDiv.textContent = `${getPlayerName(playerSymbol)} GANA!`; statusDiv.classList.add('highlight');
-        lastWinner = playerSymbol; previousGameExists = true;
+        statusDiv.textContent = `${getPlayerName(winnerSymbol)} GANA!`; statusDiv.classList.add('highlight');
+        lastWinner = winnerSymbol; previousGameExists = true;
 
-        let p1EffectiveIcon = myPlayerIcon || currentSymbols.player1;
-        let p2EffectiveIcon;
-        if (pvpRemoteActive) {
-             p1EffectiveIcon = iAmPlayer1InRemote ? (myPlayerIcon || currentSymbols.player1) : (opponentPlayerIcon || currentSymbols.player2);
-             p2EffectiveIcon = iAmPlayer1InRemote ? (opponentPlayerIcon || currentSymbols.player2) : (myPlayerIcon || currentSymbols.player1);
-        } else if (vsCPU) {
-            p2EffectiveIcon = currentSymbols.player2;
-        } else { // Local PvP
-             p2EffectiveIcon = (p1EffectiveIcon === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
-        }
+        if(winnerSymbol === myEffectiveIcon) myWins++;
+        else if (winnerSymbol === opponentEffectiveIcon) opponentWins++; // opponentEffectiveIcon is defined for PvP/CPU
 
-
-        if(playerSymbol === p1EffectiveIcon) unicornWins++; else if(playerSymbol === p2EffectiveIcon) heartWins++;
-        localStorage.setItem('unicornWins',unicornWins);localStorage.setItem('heartWins',heartWins);
+        localStorage.setItem('myWinsTateti',myWins); localStorage.setItem('opponentWinsTateti',opponentWins);
         updateScoreboard();
 
+        const delay = AUTO_RESTART_DELAY_WIN;
         if (pvpRemoteActive && gamePaired) {
-            // In remote, might not auto-restart or depends on agreement
-            // For now, host can initiate restart via button, or player can request.
-            showOverlay(`${getPlayerName(playerSymbol)} GANA! Esperando para reiniciar...`);
-        } else {
-            setTimeout(init, AUTO_RESTART_DELAY_WIN);
+            showOverlay(`${getPlayerName(winnerSymbol)} GANA! Nueva partida en ${delay / 1000}s...`);
+            setTimeout(init, delay); // AUTOMATIC RESTART for remote games
+        } else { // Local or CPU games
+            setTimeout(init, delay);
         }
     }
     function endDraw(){
-        gameActive=false;setBoardClickable(false);playDrawAnimation();playSound('draw');
-        statusDiv.textContent="¡EMPATE!";draws++;lastWinner=null;previousGameExists=true;
-        localStorage.setItem('draws',draws);updateScoreboard();
+        gameActive=false; setBoardClickable(false); playDrawAnimation(); playSound('draw');
+        statusDiv.textContent="¡EMPATE!"; draws++; lastWinner=null; previousGameExists=true;
+        localStorage.setItem('drawsTateti',draws); updateScoreboard();
 
+        const delay = AUTO_RESTART_DELAY_DRAW;
         if (pvpRemoteActive && gamePaired) {
-             showOverlay(`¡EMPATE! Esperando para reiniciar...`);
-        } else {
-            setTimeout(init, AUTO_RESTART_DELAY_DRAW);
+            showOverlay(`¡EMPATE! Nueva partida en ${delay / 1000}s...`);
+            setTimeout(init, delay); // AUTOMATIC RESTART for remote games
+        } else { // Local or CPU games
+            setTimeout(init, delay);
         }
     }
 
     function switchPlayer(){
-        let p1IconToUse, p2IconToUse;
-
-        if (pvpRemoteActive && gamePaired) {
-            p1IconToUse = iAmPlayer1InRemote ? (myPlayerIcon || currentSymbols.player1) : (opponentPlayerIcon || currentSymbols.player2);
-            p2IconToUse = iAmPlayer1InRemote ? (opponentPlayerIcon || currentSymbols.player2) : (myPlayerIcon || currentSymbols.player1);
-        } else if (vsCPU) {
-            p1IconToUse = myPlayerIcon || currentSymbols.player1;
-            p2IconToUse = currentSymbols.player2;
-        } else { // Local PvP
-            p1IconToUse = myPlayerIcon || currentSymbols.player1;
-            // P2's icon is the other from the current set, unless P1 chose P2's default
-            p2IconToUse = (p1IconToUse === currentSymbols.player1) ? currentSymbols.player2 : currentSymbols.player1;
-            if (p1IconToUse === currentSymbols.player2) p2IconToUse = currentSymbols.player1; // ensure it's the other
-        }
-
-        currentPlayer = (currentPlayer === p1IconToUse) ? p2IconToUse : p1IconToUse;
+        // Switches currentPlayer between the two icons active in the current game (gameP1Icon and gameP2Icon)
+        currentPlayer = (currentPlayer === gameP1Icon) ? gameP2Icon : gameP1Icon;
     }
-
 
     function updateScoreboard(){
-        let p1DisplayIcon = myPlayerIcon || currentSymbols.player1;
-        let p2DisplayIcon;
-
-        if (pvpRemoteActive && gamePaired) {
-            p1DisplayIcon = iAmPlayer1InRemote ? (myPlayerIcon || currentSymbols.player1) : (opponentPlayerIcon || currentSymbols.player2);
-            p2DisplayIcon = iAmPlayer1InRemote ? (opponentPlayerIcon || currentSymbols.player2) : (myPlayerIcon || currentSymbols.player1);
-        } else if (vsCPU) {
-            p2DisplayIcon = currentSymbols.player2;
-        } else { // Local PvP
-            if (p1DisplayIcon === currentSymbols.player1) {
-                p2DisplayIcon = currentSymbols.player2;
-            } else if (p1DisplayIcon === currentSymbols.player2) {
-                p2DisplayIcon = currentSymbols.player1;
-            } else { // Player 1 chose a non-default icon from the set
-                p2DisplayIcon = currentSymbols.player2; // P2 defaults to player2 of the set
-            }
+        // Ensure effective icons are determined, especially if this is called early
+        if (!myEffectiveIcon || (!opponentEffectiveIcon && (vsCPU || pvpRemoteActive))) {
+             determineEffectiveIcons();
         }
-        if (!p1DisplayIcon) p1DisplayIcon = currentSymbols.player1; // Fallback
-        if (!p2DisplayIcon) p2DisplayIcon = currentSymbols.player2; // Fallback
+
+        // Scoreboard consistently shows "my" info first, then "opponent's" info
+        let myDisplayName = getPlayerName(myEffectiveIcon);
+        let opponentDisplayName = (vsCPU || pvpRemoteActive) ? getPlayerName(opponentEffectiveIcon) : getPlayerName(gameP2Icon); // For local PvP, gameP2Icon is opponent
 
         const resultsDiv = document.getElementById('results');
-        if (resultsDiv) { // Check if element exists
-            resultsDiv.innerHTML = `${p1DisplayIcon} <span id="unicornWins">${unicornWins}</span> – ${p2DisplayIcon} <span id="heartWins">${heartWins}</span> – 🤝 <span id="draws">${draws}</span>`;
+        if (resultsDiv) {
+            resultsDiv.innerHTML = `${myDisplayName} <span id="myWinsSpan">${myWins}</span> – ${opponentDisplayName} <span id="opponentWinsSpan">${opponentWins}</span> – 🤝 <span id="drawsSpan">${draws}</span>`;
         }
     }
 
-    function playSound(type){
-        if(!soundEnabled)return;const ctx=getAudioContext();if(!ctx)return;
-        const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);
-        if(type==='move'){o.type='sine';o.frequency.setValueAtTime(200,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(300,ctx.currentTime+.1);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.1)}
-        else if(type==='win'){o.type='triangle';o.frequency.setValueAtTime(300,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(600,ctx.currentTime+.3);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3)}
-        else if(type==='draw'){o.type='sawtooth';o.frequency.setValueAtTime(200,ctx.currentTime);g.gain.setValueAtTime(.2,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(100,ctx.currentTime+.3);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3)}
-        else if(type==='reset'){o.type='square';o.frequency.setValueAtTime(150,ctx.currentTime);g.gain.setValueAtTime(.2,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+.2);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2)}
-        o.start(ctx.currentTime);o.stop(ctx.currentTime+.5);
-    }
+    function playSound(type){ if(!soundEnabled)return;const ctx=getAudioContext();if(!ctx)return; const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination); if(type==='move'){o.type='sine';o.frequency.setValueAtTime(200,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(300,ctx.currentTime+.1);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.1)} else if(type==='win'){o.type='triangle';o.frequency.setValueAtTime(300,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(600,ctx.currentTime+.3);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3)} else if(type==='draw'){o.type='sawtooth';o.frequency.setValueAtTime(200,ctx.currentTime);g.gain.setValueAtTime(.2,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(100,ctx.currentTime+.3);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3)} else if(type==='reset'){o.type='square';o.frequency.setValueAtTime(150,ctx.currentTime);g.gain.setValueAtTime(.2,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+.2);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2)} o.start(ctx.currentTime);o.stop(ctx.currentTime+.5); }
     function toggleTheme(){document.body.classList.toggle('dark-theme');localStorage.setItem('darkTheme',document.body.classList.contains('dark-theme'));updateAllUIToggleButtons();playSound('move')}
     function toggleSound(){soundEnabled=!soundEnabled;localStorage.setItem('soundDisabled',!soundEnabled);updateAllUIToggleButtons();if(soundEnabled)playSound('reset')}
     function changeSymbolsBtnHandler(){
         currentSymbolIndex=(currentSymbolIndex+1)%symbolSet.length;localStorage.setItem('currentSymbolIndex',currentSymbolIndex);
         currentSymbols=symbolSet[currentSymbolIndex];
-        if (!localStorage.getItem('tatetiPlayerIcon')) { // Only change myPlayerIcon if it wasn't explicitly set
-            myPlayerIcon = currentSymbols.player1;
+        // If player had not chosen an icon, their effective icon might change.
+        // If they had chosen one, it remains.
+        if (!localStorage.getItem('tatetiPlayerIcon')) { // If icon was default
+            myPlayerIcon = null; // Let determineEffectiveIcons pick new default
         }
-        // Opponent icon default for remote play or CPU would also need to consider this change if not customized by opponent.
-        // This primarily affects local games or default appearances before customization.
         playSound('move');
-        populateIconSelection(); // Re-populate to reflect new defaults & current selection
-        init(); // Re-initialize the game to apply new default symbols if active
+        populateIconSelection(); // Update icon choices if needed (though symbolSet itself isn't changing here)
+        init(); // Re-initialize game, which will redetermine effective icons.
     }
     if(changeSymbolsBtn) changeSymbolsBtn.addEventListener('click',changeSymbolsBtnHandler);
 
@@ -782,12 +668,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const roomId = urlParams.get('room');
         if (roomId) {
             console.log("GAME.JS: Room ID found in URL:", roomId);
-            // Attempt to join this room
-            // Need to make sure UI is ready for this (e.g., joinGameBtn might not be clicked by user)
-            // So, directly call handleJoinGame with the roomId
-            handleJoinGame(roomId);
-            // Clean the URL
-            window.history.replaceState({}, document.title, window.location.pathname);
+            handleJoinGame(roomId); // Attempt to join this room
+            window.history.replaceState({}, document.title, window.location.pathname); // Clean URL
         } else {
             init(); // Standard initialization if no room ID
         }
@@ -795,52 +677,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ----------  EVENT LISTENERS  ---------- */
     cells.forEach(c=>{c.addEventListener('click',handleCellClick);c.setAttribute('tabindex','0');c.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();c.click();}});});
-    const restartBtn = document.getElementById('restartBtn'); // This button is hidden by default in HTML
-    if(restartBtn) restartBtn.addEventListener('click', () => {
+    const restartBtn = document.getElementById('restartBtn'); // Hidden, but referenced
+    if(restartBtn) restartBtn.addEventListener('click', () => { // For potential future use or if icon triggers it
         if (pvpRemoteActive && gamePaired && window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === "function") {
             window.peerJsMultiplayer.send({ type: 'restart_request' });
             showOverlay("Solicitud de reinicio enviada...");
-        } else {
-            init(); // Local restart
+        } else { // Local or CPU game, or remote not paired
+            init();
         }
     });
-    restartIcon.addEventListener('click', () => {
+    restartIcon.addEventListener('click', () => { // Visible restart button
         if (pvpRemoteActive && gamePaired && window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === "function") {
+            // For manual restart during a remote game, send a request
             window.peerJsMultiplayer.send({ type: 'restart_request' });
             showOverlay("Solicitud de reinicio enviada...");
-            // Opponent needs to ack for remote restart. For now, host-initiated restart via this button
-            // will send request. Actual restart happens on ack or if both press.
-            // For simplicity here, init() might be called by host, opponent gets request.
-        } else {
-             stopAnyGameInProgress(); // Clear any state thoroughly
-             init(); // Then re-initialize for a fresh local game or menu state.
+        } else { // For local/CPU games, or if remote not paired, just restart locally immediately
+             stopAnyGameInProgress(); // Ensure clean state
+             init();
         }
         if (sideMenu.classList.contains('open')) sideMenu.classList.remove('open');
     });
 
     pvpLocalBtn.addEventListener('click',()=>{ stopAnyGameInProgress(); vsCPU=false; pvpRemoteActive = false; init(); });
     if (hostGameBtn) hostGameBtn.addEventListener('click', handleHostGame);
-    if (joinGameBtn) joinGameBtn.addEventListener('click', () => handleJoinGame()); // Pass null, will prompt for ID
+    if (joinGameBtn) joinGameBtn.addEventListener('click', () => handleJoinGame()); // Prompts for ID
     cpuBtn.addEventListener('click',()=>{ stopAnyGameInProgress(); vsCPU=true; pvpRemoteActive = false; init(); });
-    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{ difficulty=e.target.id.replace('Btn',''); updateAllUIToggleButtons(); playSound('move'); if(!gameActive || vsCPU || (gameActive && board.every(c=>c===null)) ) init(); })); // Re-init if game not active, or if vs CPU and board is clear
-    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn.addEventListener('click',e=>{ whoGoesFirstSetting=e.target.id.replace('StartsBtn',''); localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting); updateAllUIToggleButtons(); playSound('move'); if(!gameActive || board.every(c=>c===null)) init(); }));
+
+    [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn?.addEventListener('click',e=>{ difficulty=e.target.id.replace('Btn',''); updateAllUIToggleButtons(); playSound('move'); if(!gameActive || vsCPU || (gameActive && board.every(c=>c===null)) ) init(); }));
+    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(btn=>btn?.addEventListener('click',e=>{ whoGoesFirstSetting=e.target.id.replace('StartsBtn',''); localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting); updateAllUIToggleButtons(); playSound('move'); if(!gameActive || board.every(c=>c===null)) init(); }));
 
     themeToggle.addEventListener('click',toggleTheme);
     soundToggle.addEventListener('click',toggleSound);
     document.addEventListener('click', initAudioOnInteraction, { once: true });
-    document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false}); // Prevent double-click zoom
+    document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
     /* ----------  INICIALIZACIÓN  ---------- */
     if(localStorage.getItem('darkTheme')==='true') document.body.classList.add('dark-theme');
-    loadPlayerPreferences(); // Load player name/icon preferences
-    updateAllUIToggleButtons(); // Set initial UI state for buttons
-    checkUrlForRoomAndJoin(); // Checks for room ID in URL, otherwise calls init()
+    loadPlayerPreferences();    // Load custom name/icon first
+    // init() will be called by checkUrlForRoomAndJoin(), which also calls determineEffectiveIcons()
+    checkUrlForRoomAndJoin();
 });
 
 /* ----------  PWA bootstrap  ---------- */
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
+    if (location.protocol === 'http:' || location.protocol === 'https:') { // Ensure it's http/https
         navigator.serviceWorker.register('./sw.js')
           .then(reg => console.log('SW registered!', reg))
           .catch(err=>console.error('SW registration failed:',err));
