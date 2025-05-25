@@ -1,0 +1,28 @@
+{
+  "name":       "Danielle's Ta-Te-Ti",
+  "short_name": "Ta-Te-Ti",
+  "description": "Tic-Tac-Toe con unicornios, corazones y confeti ❤️🦄",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffc0cb",
+  "theme_color": "#ff69b4",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ]
+}
