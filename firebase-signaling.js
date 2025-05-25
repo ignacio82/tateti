@@ -7,6 +7,22 @@ let roomRef = null;
 let onOfferCallback, onAnswerCallback, onIceCandidateCallback, onPeerDisconnectCallback;
 let localPlayerRole = null; // 'host' or 'joiner'
 
+// Keep track of listeners to detach them
+let offerListener, answerListener, hostIceListener, joinerIceListener, hostOnlineListener, joinerOnlineListener;
+
+function detachFirebaseListeners() {
+    if (roomRef) {
+        if (offerListener) roomRef.child('offer').off('value', offerListener);
+        if (answerListener) roomRef.child('answer').off('value', answerListener);
+        if (hostIceListener) roomRef.child('hostIceCandidates').off('child_added', hostIceListener);
+        if (joinerIceListener) roomRef.child('joinerIceCandidates').off('child_added', joinerIceListener);
+        if (hostOnlineListener) roomRef.child('hostOnline').off('value', hostOnlineListener);
+        if (joinerOnlineListener) roomRef.child('joinerOnline').off('value', joinerOnlineListener);
+        console.log("Firebase listeners detached for room:", roomRef.key);
+    }
+    offerListener = answerListener = hostIceListener = joinerIceListener = hostOnlineListener = joinerOnlineListener = null;
+}
+
 function initFirebaseSignaling(roomId, playerRole, callbacks) {
     localPlayerRole = playerRole;
     onOfferCallback = callbacks.onOffer;
@@ -14,46 +30,55 @@ function initFirebaseSignaling(roomId, playerRole, callbacks) {
     onIceCandidateCallback = callbacks.onIceCandidate;
     onPeerDisconnectCallback = callbacks.onPeerDisconnect;
 
-    roomRef = database.ref('rooms/' + roomId);
+    const newRoomRef = database.ref('rooms/' + roomId);
+
+    // If roomRef is different or null, means new room or re-init for different room
+    // If same room, still good to detach and re-attach for robustness,
+    // especially if playerRole changes (though not typical for same room ID).
+    if (roomRef && roomRef.key !== newRoomRef.key) {
+        detachFirebaseListeners(); // Detach listeners from old room
+    } else if (roomRef) { // Same room, re-initializing
+        detachFirebaseListeners();
+    }
+    roomRef = newRoomRef;
+
 
     // Set up listeners
     if (localPlayerRole === 'joiner') {
-        // Joiner listens for offer from host
-        roomRef.child('offer').on('value', snapshot => {
+        offerListener = roomRef.child('offer').on('value', snapshot => {
             if (snapshot.exists() && onOfferCallback) {
                 onOfferCallback(snapshot.val());
             }
         });
-        // Joiner listens for ICE candidates from host
-        roomRef.child('hostIceCandidates').on('child_added', snapshot => {
+        hostIceListener = roomRef.child('hostIceCandidates').on('child_added', snapshot => {
             if (snapshot.exists() && onIceCandidateCallback) {
                 onIceCandidateCallback(snapshot.val());
             }
         });
-        // Joiner listens for host disconnect
-        roomRef.child('hostOnline').on('value', snapshot => {
+        hostOnlineListener = roomRef.child('hostOnline').on('value', snapshot => {
+            // Check specifically for false, as initial null/true are just presence
             if (snapshot.exists() && snapshot.val() === false && onPeerDisconnectCallback) {
+                console.log("Firebase: Host reported offline.");
                 onPeerDisconnectCallback('host');
             }
         });
     } else { // Host
-        // Host listens for answer from joiner
-        roomRef.child('answer').on('value', snapshot => {
+        answerListener = roomRef.child('answer').on('value', snapshot => {
             if (snapshot.exists() && onAnswerCallback) {
                 onAnswerCallback(snapshot.val());
             }
         });
-        // Host listens for ICE candidates from joiner
-        roomRef.child('joinerIceCandidates').on('child_added', snapshot => {
+        joinerIceListener = roomRef.child('joinerIceCandidates').on('child_added', snapshot => {
             if (snapshot.exists() && onIceCandidateCallback) {
                 onIceCandidateCallback(snapshot.val());
             }
         });
-        // Host listens for joiner disconnect
-        roomRef.child('joinerOnline').on('value', snapshot => {
+        joinerOnlineListener = roomRef.child('joinerOnline').on('value', snapshot => {
             if (snapshot.exists() && snapshot.val() === false && onPeerDisconnectCallback) {
+                console.log("Firebase: Joiner reported offline.");
                 onPeerDisconnectCallback('joiner');
-                roomRef.child('joinerOnline').remove(); // Clean up
+                // Host might clean up the joinerOnline node if joiner explicitly disconnects
+                // roomRef.child('joinerOnline').remove();
             }
         });
     }
@@ -61,7 +86,7 @@ function initFirebaseSignaling(roomId, playerRole, callbacks) {
     // Mark presence
     const presenceRef = roomRef.child(localPlayerRole === 'host' ? 'hostOnline' : 'joinerOnline');
     presenceRef.set(true);
-    presenceRef.onDisconnect().set(false); // Or remove() if you prefer
+    presenceRef.onDisconnect().set(false); // Firebase handles setting this to false on disconnect
 
     console.log(`Firebase signaling initialized for room ${roomId} as ${localPlayerRole}`);
 }
@@ -69,6 +94,10 @@ function initFirebaseSignaling(roomId, playerRole, callbacks) {
 async function sendOfferViaFirebase(offer) {
     if (!roomRef || localPlayerRole !== 'host') return;
     try {
+        // Ensure previous answer is cleared before setting a new offer,
+        // in case of re-negotiation or stale data.
+        await roomRef.child('answer').remove();
+        await roomRef.child('joinerIceCandidates').remove(); // Clear old ICE from joiner
         await roomRef.child('offer').set(offer);
         console.log("Offer sent to Firebase");
     } catch (error) {
@@ -88,27 +117,40 @@ async function sendAnswerViaFirebase(answer) {
 
 async function sendIceCandidateViaFirebase(candidate) {
     if (!roomRef) return;
-    const iceCandidatesRef = localPlayerRole === 'host' ?
-        roomRef.child('hostIceCandidates') :
-        roomRef.child('joinerIceCandidates');
+    const iceCandidatesRefPath = localPlayerRole === 'host' ?
+        'hostIceCandidates' :
+        'joinerIceCandidates';
     try {
-        await iceCandidatesRef.push(candidate); // push() creates a unique ID for each candidate
-        console.log("ICE candidate sent to Firebase");
-    } catch (error) {
+        await roomRef.child(iceCandidatesRefPath).push(candidate);
+        console.log("ICE candidate sent to Firebase on path:", iceCandidatesRefPath);
+    } catch (error)
+        {
         console.error("Error sending ICE candidate to Firebase:", error);
     }
 }
 
 function cleanUpFirebaseRoom() {
-    if (roomRef && localPlayerRole === 'host') { // Only host cleans up the entire room
-        console.log("Host cleaning up Firebase room:", roomRef.key);
-        roomRef.remove()
-            .then(() => console.log("Firebase room removed."))
-            .catch(err => console.error("Error removing Firebase room:", err));
-    } else if (roomRef) { // Joiner just removes their presence
-        roomRef.child('joinerOnline').remove();
+    console.log("Attempting to clean up Firebase room parts by:", localPlayerRole);
+    detachFirebaseListeners(); // Crucial: Detach listeners to prevent them from firing after cleanup
+
+    if (roomRef) {
+        const presenceRefPath = localPlayerRole === 'host' ? 'hostOnline' : 'joinerOnline';
+        // Remove own presence node directly instead of relying only on onDisconnect,
+        // as onDisconnect might not fire if browser closes abruptly or network drops before it can.
+        roomRef.child(presenceRefPath).set(false) // Signal offline explicitly
+            .then(() => console.log(`Set ${presenceRefPath} to false`))
+            .catch(err => console.error(`Error setting ${presenceRefPath} to false:`, err));
+
+
+        if (localPlayerRole === 'host') {
+            // Host might decide to remove the entire room after a delay or specific condition
+            // For now, just ensure presence is off. If rejoining rooms is not supported with same ID,
+            // host should remove the room.
+            // Example: roomRef.remove().then(...);
+            console.log("Host has marked self offline. Room data might persist unless explicitly removed by host logic.");
+        }
     }
-    roomRef = null;
+    roomRef = null; // Nullify after detaching and updates.
 }
 
 window.firebaseSignaling = {
