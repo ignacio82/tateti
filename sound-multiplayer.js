@@ -1,13 +1,14 @@
 // sound-multiplayer.js
 
 const FREQS = [1200, 1350, 1500, 1650, 1800, 1950, 2100, 2250, 2400]; // For moves 0-8
-const PAIR_REQUEST_FREQ = 1000; // Example frequency
-const PAIR_ACCEPT_FREQ = 1100;  // Example frequency
-const ACK_FREQ = 900; // Optional: For acknowledging received moves
+const PAIR_REQUEST_FREQ = 1000;
+const PAIR_ACCEPT_FREQ = 1100;
+const HOST_ACK_FREQ = 800; // New frequency for Host's acknowledgment
+const ACK_FREQ = 900; // Optional: For acknowledging received moves (can be kept if used elsewhere)
 
 let isListening = false;
 let audioListenerContext = null;
-let currentListeningType = null; // 'move', 'pair_request', 'pair_accept'
+let currentListeningType = null; // 'move', 'pair_request', 'pair_accept', 'host_ack'
 
 /**
  * Send a specific frequency sound
@@ -37,7 +38,7 @@ function sendFrequency(freq, duration = 0.3) {
 
 function sendMoveViaSound(index) {
   if (index >= 0 && index < FREQS.length) {
-    sendFrequency(FREQS[index], 0.5); // Moves might need slightly longer duration
+    sendFrequency(FREQS[index], 0.5);
   }
 }
 
@@ -49,26 +50,30 @@ function sendPairingAccept() {
   sendFrequency(PAIR_ACCEPT_FREQ, 0.5);
 }
 
+function sendHostAck() { // New function to send Host ACK
+  sendFrequency(HOST_ACK_FREQ, 0.3);
+}
+
 // Optional: Acknowledge move
 function sendAck() {
   sendFrequency(ACK_FREQ, 0.2);
 }
 
-
 /**
  * Start listening for incoming sounds
- * @param {string} type - 'move', 'pair_request', 'pair_accept', 'ack'
+ * @param {string} type - 'move', 'pair_request', 'pair_accept', 'host_ack', 'ack'
  * @param {function} onDetect - Callback with detected index or signal type
  */
 async function startListeningForSounds(type, onDetect) {
   if (isListening) {
-    console.log("Already listening, stopping previous listener.");
-    stopListening(); // Stop any previous listener
+    console.log("Already listening, stopping previous listener for type:", currentListeningType);
+    stopListening(); 
   }
   isListening = true;
   currentListeningType = type;
+  console.log("Starting listener for type:", currentListeningType);
 
-  // Ensure AudioContext is available and resumed
+
   if (!audioListenerContext || audioListenerContext.state === 'closed') {
     audioListenerContext = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -82,33 +87,38 @@ async function startListeningForSounds(type, onDetect) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 4096; // Increased for better frequency resolution
-    analyser.smoothingTimeConstant = 0.2; // Some smoothing
+    analyser.fftSize = 4096; 
+    analyser.smoothingTimeConstant = 0.2; 
     source.connect(analyser);
 
     const buffer = new Float32Array(analyser.fftSize);
     const sampleRate = ctx.sampleRate;
 
     let lastHeardAt = 0;
-    const cooldownMs = 1500; // Increased cooldown
-    const detectionThreshold = 0.15; // Relative magnitude threshold (tune this)
-                                    // Or an absolute threshold if preferred: const MIN_POWER_THRESHOLD = 10;
+    const cooldownMs = 1500; 
+    const minDbThreshold = -50; 
 
     function detectLoop() {
-      if (!isListening || currentListeningType !== type) { // Stop if type changed or stopped
+      if (!isListening || currentListeningType !== type) { 
           if (source && source.mediaStream && source.mediaStream.getTracks) {
               source.mediaStream.getTracks().forEach(track => track.stop());
           }
+          console.log("Listener stopping or type changed. Current:", currentListeningType, "Expected:", type);
           return;
       }
-      analyser.getFloatFrequencyData(buffer); // Use frequency data for clearer peaks
+      analyser.getFloatFrequencyData(buffer); 
 
       let targetFreqs;
       if (type === 'move') targetFreqs = FREQS;
       else if (type === 'pair_request') targetFreqs = [PAIR_REQUEST_FREQ];
       else if (type === 'pair_accept') targetFreqs = [PAIR_ACCEPT_FREQ];
+      else if (type === 'host_ack') targetFreqs = [HOST_ACK_FREQ]; // Listen for HOST_ACK
       else if (type === 'ack') targetFreqs = [ACK_FREQ];
-      else { isListening = false; return; }
+      else { 
+        console.error("Unknown listening type:", type);
+        stopListening(); // Stop if type is unknown
+        return; 
+      }
 
       let dominantFreq = -1;
       let maxMagnitude = -Infinity;
@@ -118,7 +128,6 @@ async function startListeningForSounds(type, onDetect) {
           const binWidth = sampleRate / analyser.fftSize;
           const targetBin = Math.round(freq / binWidth);
           
-          // Check a small window around the target bin
           let peakMagnitudeInBin = -Infinity;
           for (let j = Math.max(0, targetBin - 2); j <= Math.min(analyser.frequencyBinCount - 1, targetBin + 2); j++) {
               if (buffer[j] > peakMagnitudeInBin) {
@@ -128,18 +137,13 @@ async function startListeningForSounds(type, onDetect) {
 
           if (peakMagnitudeInBin > maxMagnitude) {
               maxMagnitude = peakMagnitudeInBin;
-              dominantFreq = freq; // Store the target frequency, not the exact detected one
+              dominantFreq = freq; 
           }
       }
       
-      // More robust thresholding - this needs tuning based on testing
-      // Convert from dB to linear: power = 10^(dB/10). A value like -50dB might be a good threshold.
-      const minDbThreshold = -50; // Adjust this value
-
       const now = Date.now();
       if (maxMagnitude > minDbThreshold && now - lastHeardAt > cooldownMs) {
         lastHeardAt = now;
-        // isListening = false; // Keep listening or stop based on game logic needs. For handshake, stop after one detection.
         
         let detectedValue = -1;
         if (type === 'move') {
@@ -148,16 +152,17 @@ async function startListeningForSounds(type, onDetect) {
             detectedValue = 'pair_request_detected';
         } else if (dominantFreq === PAIR_ACCEPT_FREQ && type === 'pair_accept') {
             detectedValue = 'pair_accept_detected';
+        } else if (dominantFreq === HOST_ACK_FREQ && type === 'host_ack') { // Detect HOST_ACK
+            detectedValue = 'host_ack_detected';
         } else if (dominantFreq === ACK_FREQ && type === 'ack') {
             detectedValue = 'ack_detected';
         }
 
         if (detectedValue !== -1 && detectedValue !== undefined) {
             console.log(`Detected ${type}: ${dominantFreq} Hz (Value: ${detectedValue}), Mag: ${maxMagnitude} dB`);
-            stopListening(); // Stop after successful detection for handshake/ack
+            stopListening(); 
             onDetect(detectedValue);
         } else {
-            // Detected a strong frequency but not the one we are looking for this type
             // console.log(`Detected strong freq ${dominantFreq} but not for type ${type}`);
         }
       }
@@ -175,21 +180,9 @@ async function startListeningForSounds(type, onDetect) {
     console.error('Error starting listener:', err);
     isListening = false;
     currentListeningType = null;
-    hideStatusOverlay();
-    // Optionally, inform the user:
-    // statusDiv.textContent = "Error con micrófono. Revisa permisos.";
-    // Consider updating UI to reflect microphone error
-    const soundToggle = document.getElementById('soundToggle');
-    if (soundToggle) {
-      // Simulate disabling sound as a fallback or visual cue
-      // soundToggle.click(); // This might trigger other logic, be careful
-      // Or just update text:
-      // soundToggle.textContent='🔇';
-      // alert("No se pudo acceder al micrófono. El juego con sonido no funcionará.");
-    }
+    if (typeof hideStatusOverlay === "function") hideStatusOverlay(); // Ensure this function exists
   }
 }
-
 
 /** Stop the audio listener */
 function stopListening() {
@@ -197,33 +190,37 @@ function stopListening() {
       console.log("Stopping listener for type:", currentListeningType);
   }
   isListening = false;
-  currentListeningType = null; // Clear the type
-  // The stream tracks are stopped within the detectLoop when isListening becomes false.
-  if (audioListenerContext && audioListenerContext.state === 'running') {
-    // Don't close the context here, as it might be reused.
-    // Tracks are stopped individually.
-  }
+  // currentListeningType = null; // Do not clear here, detectLoop checks it to stop
+  // The stream tracks are stopped within the detectLoop when isListening becomes false or type changes.
 }
 
+// Functions for showStatusOverlay and hideStatusOverlay
+// (Ensure these are present, as discussed previously, or the game will have other errors)
 function showStatusOverlay(text) {
   const overlay = document.getElementById('statusOverlay');
-  overlay.textContent = text;
-  overlay.style.display = 'block';
+  if (overlay) {
+    overlay.textContent = text;
+    overlay.style.display = 'block';
+  } else {
+    console.warn("statusOverlay element not found for showStatusOverlay");
+  }
 }
 
 function hideStatusOverlay() {
   const overlay = document.getElementById('statusOverlay');
-  if (overlay) overlay.style.display = 'none';
+  if (overlay) {
+    overlay.style.display = 'none';
+  } else {
+    console.warn("statusOverlay element not found for hideStatusOverlay");
+  }
 }
 
-// Make sure these are exported if not already:
 window.sendPairingRequest = sendPairingRequest;
 window.sendPairingAccept = sendPairingAccept;
-window.sendAck = sendAck; // If you implement ACKs
+window.sendHostAck = sendHostAck; // Export new function
+window.sendAck = sendAck; 
 window.startListeningForSounds = startListeningForSounds;
-window.stopListening = stopListening; // Assuming stopListening is defined in this file
-window.sendMoveViaSound = sendMoveViaSound; // Assuming sendMoveViaSound is defined in this file
-
-// Add exports for the overlay functions
+window.stopListening = stopListening;
+window.sendMoveViaSound = sendMoveViaSound;
 window.showStatusOverlay = showStatusOverlay;
 window.hideStatusOverlay = hideStatusOverlay;

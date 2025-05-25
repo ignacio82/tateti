@@ -213,6 +213,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const sideMenu          = document.getElementById('side-menu');
     const restartIcon       = document.getElementById('restart-icon');
 
+    // Destructure sound functions from window for clarity and to avoid scope issues
+    // Ensure these are available from sound-multiplayer.js
+    const {
+        sendPairingRequest: sndPairRequest, // Renamed to avoid conflict if local var exists
+        startListeningForSounds: listenForSnd,
+        sendPairingAccept: sndPairAccept,
+        sendHostAck: sndHostAck,
+        stopListening: stopSndListening,
+        sendMoveViaSound: sndMove,
+        showStatusOverlay: showOverlay,
+        hideStatusOverlay: hideOverlay
+    } = window;
+
+
     menuToggle.addEventListener('click', () => sideMenu.classList.toggle('open'));
     document.addEventListener('click', e => {
         if (!sideMenu.contains(e.target) && !menuToggle.contains(e.target) && sideMenu.classList.contains('open')) {
@@ -269,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
             c.classList.add('confetti');
             c.style.background=confettiColors[Math.floor(Math.random()*confettiColors.length)];
             c.style.left=`${Math.random()*100}vw`;
-            c.style.top=`${Math.random()*-80-20}px`; // Start above screen
+            c.style.top=`${Math.random()*-80-20}px`; 
             const animDuration=Math.random()*2+3;
             const animDelay=Math.random()*0.5;
             c.style.width=`${Math.random()*6+6}px`;
@@ -283,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function removeConfetti(){ document.querySelectorAll('.confetti').forEach(c=>c.remove()); }
     function playDrawAnimation(){
-        const dur=1800; // ms
+        const dur=1800; 
         statusDiv.classList.add('highlight-draw-flash');
         gameBoardEl.classList.add('highlight-draw-border');
         setTimeout(()=>{
@@ -296,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* ----------  LÓGICA PRINCIPAL  ---------- */
     function setBoardClickable(clickable){
-        cells.forEach(cellNode =>{ // Use a different variable name like cellNode to avoid conflict if 'cells' is used broadly
+        cells.forEach(cellNode =>{ 
             if(clickable){ 
                 board[cellNode.dataset.index] === null ? cellNode.classList.remove('disabled') : cellNode.classList.add('disabled');
             } else {
@@ -308,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function getPlayerName(sym){
         if(sym===currentSymbols.player1)return `${sym} ${sym==='🦄'?'Unicornio':sym==='🐱'?'Gatito':sym==='🌞'?'Sol':'Equis'}`;
         if(sym===currentSymbols.player2)return `${sym} ${sym==='❤️'?'Corazón':sym==='🐶'?'Perrito':sym==='🌙'?'Luna':'Círculo'}`;
-        return sym; // Fallback
+        return sym; 
     }
     
     function updateAllUIToggleButtons(){
@@ -336,15 +350,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function init(){
         removeConfetti();
-        hideStatusOverlay();
-        if (typeof stopListening === "function") stopListening(); // Ensure it's defined and called
+        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
+        if (typeof stopSndListening === "function") stopSndListening();  else console.warn("stopSndListening is not defined");
+
 
         board=Array(9).fill(null);
-        // vsCPU and pvpRemoteActive are set by button handlers before calling init in those cases
-
         difficulty = easyBtn.classList.contains('active')?'easy':hardBtn.classList.contains('active')?'hard':'medium';
-        
-        gameActive = false; // Default to not active until mode is confirmed
+        gameActive = false; 
 
         if (pvpRemoteActive && gamePaired) {
             currentPlayer = iAmPlayer1InRemote ? currentSymbols.player1 : currentSymbols.player2;
@@ -356,9 +368,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 listenForRemoteMove();
             }
         } else if (pvpRemoteActive && !gamePaired) {
+            // This state is handled by handleHostGame/handleJoinGame UI updates.
+            // init() might be called after pairing, so this branch handles if it's called *before* full pairing.
             statusDiv.textContent = iAmPlayer1InRemote ? "Esperando que alguien se una..." : "Buscando juego hosteado...";
             setBoardClickable(false);
-            // gameActive remains false
         } else if (vsCPU) {
             gameActive = true;
             switch(whoGoesFirstSetting){
@@ -366,10 +379,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'loser':
                     currentPlayer = (!previousGameExists||lastWinner===null)?currentSymbols.player1:(lastWinner===currentSymbols.player1?currentSymbols.player2:currentSymbols.player1);
                     break;
-                default: currentPlayer = currentSymbols.player1; // Player 1 (e.g., Unicorn) starts
+                default: currentPlayer = currentSymbols.player1; 
             }
             statusDiv.textContent = `Turno del ${getPlayerName(currentPlayer)}`;
-            if(currentPlayer===currentSymbols.player2){ // If CPU (Player 2) starts
+            if(currentPlayer===currentSymbols.player2){ 
                 setBoardClickable(false);
                 setTimeout(()=>{ if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
             } else {
@@ -401,11 +414,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function stopAnyGameInProgress() {
         gameActive = false;
-        if (typeof stopListening === "function") stopListening();
-        board = Array(9).fill(null); // Reset board
+        if (typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
+        board = Array(9).fill(null); 
         cells.forEach(c => { c.querySelector('span').textContent = ''; c.classList.remove('rainbow', 'disabled'); });
         removeConfetti();
-        hideStatusOverlay();
+        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
     }
 
     function handleHostGame() {
@@ -414,27 +427,42 @@ document.addEventListener('DOMContentLoaded', () => {
         vsCPU = false;
         iAmPlayer1InRemote = true;
         gamePaired = false;
-        updateAllUIToggleButtons(); // Update UI to show host state
+        updateAllUIToggleButtons();
         statusDiv.textContent = "Hosteando... Enviando señal de pairing.";
-        showStatusOverlay("Enviando señal para que otro jugador se una... 🔊");
+        if (typeof showOverlay === "function") showOverlay("Enviando señal para que otro jugador se una... 🔊"); else console.warn("showOverlay is not defined");
         
-        if (typeof sendPairingRequest !== "function" || typeof startListeningForSounds !== "function") {
-            console.error("Sound functions (sendPairingRequest or startListeningForSounds) not defined!");
+        if (typeof sndPairRequest !== "function" || typeof listenForSnd !== "function") {
+            console.error("Sound functions (sndPairRequest or listenForSnd) not defined!");
             statusDiv.textContent = "Error: Funciones de sonido no encontradas.";
+            if (typeof hideOverlay === "function") hideOverlay();
             return;
         }
-        sendPairingRequest(); 
-        startListeningForSounds('pair_accept', (signal) => {
+
+        sndPairRequest(); 
+        listenForSnd('pair_accept', (signal) => {
             if (signal === 'pair_accept_detected') {
+                statusDiv.textContent = "Jugador encontrado! Enviando ACK final...";
+                if (typeof sndHostAck !== "function") {
+                    console.error("sndHostAck function not defined! Cannot complete handshake.");
+                    statusDiv.textContent = "Error crítico en handshake! (ACK)";
+                     if (typeof hideOverlay === "function") hideOverlay();
+                    return; 
+                }
+                
+                sndHostAck(); // HOST sends final ACK
+                
                 gamePaired = true;
-                hideStatusOverlay();
+                if (typeof hideOverlay === "function") hideOverlay();
                 playSound('win'); 
                 statusDiv.textContent = "¡Conectado! Eres Jugador 1 (🦄). Iniciando...";
                 init(); 
             } else {
-                // statusDiv.textContent = "Error de pairing o señal inesperada. Reintentando...";
-                // To avoid infinite loop on wrong signal, might add a timeout or retry limit here
-                // For now, it will just keep listening if signal wasn't 'pair_accept_detected'
+                // This path might be taken if stopListening was called by another instance
+                // or if a non-target sound was strong enough but filtered out by type.
+                // Consider adding a timeout or retry limit for robustness.
+                // if (gamePaired) return; // Already paired by a rapid subsequent signal.
+                console.log("Host: 'pair_accept' not detected or unexpected signal:", signal);
+                // statusDiv.textContent = "Esperando aceptación del jugador..."; // Keep UI indicating listening
             }
         });
     }
@@ -447,24 +475,41 @@ document.addEventListener('DOMContentLoaded', () => {
         gamePaired = false;
         updateAllUIToggleButtons(); 
         statusDiv.textContent = "Buscando juego... Escuchando señal de pairing.";
-        showStatusOverlay("Escuchando para unirse a un juego... 🔊");
+        if (typeof showOverlay === "function") showOverlay("Escuchando para unirse a un juego... 🔊"); else console.warn("showOverlay is not defined");
 
-        if (typeof startListeningForSounds !== "function" || typeof sendPairingAccept !== "function") {
-            console.error("Sound functions (startListeningForSounds or sendPairingAccept) not defined!");
+
+        if (typeof listenForSnd !== "function" || typeof sndPairAccept !== "function") {
+            console.error("Sound functions (listenForSnd or sndPairAccept) not defined!");
             statusDiv.textContent = "Error: Funciones de sonido no encontradas.";
+            if (typeof hideOverlay === "function") hideOverlay();
             return;
         }
-        startListeningForSounds('pair_request', (signal) => {
+
+        listenForSnd('pair_request', (signal) => {
             if (signal === 'pair_request_detected') {
-                hideStatusOverlay();
-                statusDiv.textContent = "Juego encontrado! Enviando aceptación...";
+                if (typeof hideOverlay === "function") hideOverlay();
+                statusDiv.textContent = "Juego encontrado! Enviando aceptación y esperando ACK del Host...";
                 playSound('move'); 
-                sendPairingAccept(); 
-                gamePaired = true;
-                statusDiv.textContent = "¡Conectado! Eres Jugador 2 (❤️). Iniciando...";
-                init(); 
+                sndPairAccept(); 
+
+                if (typeof showOverlay === "function") showOverlay("Esperando confirmación final del Host... 🔊");
+                listenForSnd('host_ack', (ackSignal) => {
+                    if (ackSignal === 'host_ack_detected') {
+                        gamePaired = true;
+                        if (typeof hideOverlay === "function") hideOverlay();
+                        playSound('win'); 
+                        statusDiv.textContent = "¡Conectado y confirmado! Eres Jugador 2 (❤️). Iniciando...";
+                        init(); 
+                    } else {
+                        console.log("Joiner: 'host_ack' not detected or unexpected signal:", ackSignal);
+                        if (typeof showOverlay === "function") showOverlay("Error de confirmación. Intenta unirte de nuevo.");
+                        // Consider resetting state:
+                        // pvpRemoteActive = false; gamePaired = false; init(); // Go back to main menu essentially
+                    }
+                });
             } else {
-                // statusDiv.textContent = "No se encontró juego. Reintentando...";
+                 console.log("Joiner: 'pair_request' not detected or unexpected signal:", signal);
+                // statusDiv.textContent = "No se encontró juego hosteado...";
             }
         });
     }
@@ -485,24 +530,24 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("Not listening for remote move:", {pvpRemoteActive, isMyTurnInRemote, gameActive, gamePaired});
             return;
         }
-        showStatusOverlay(`Esperando el movimiento de ${getPlayerName(currentPlayer)}... 🔊`);
-        if (typeof startListeningForSounds !== "function") {
-            console.error("startListeningForSounds is not defined!");
-            hideStatusOverlay();
+        if (typeof showOverlay === "function") showOverlay(`Esperando el movimiento de ${getPlayerName(currentPlayer)}... 🔊`); else console.warn("showOverlay is not defined");
+        
+        if (typeof listenForSnd !== "function") {
+            console.error("listenForSnd is not defined!");
+            if (typeof hideOverlay === "function") hideOverlay();
             statusDiv.textContent = "Error crítico: Escucha de sonidos no disponible.";
             return;
         }
-        startListeningForSounds('move', handleRemoteMoveDetected);
+        listenForSnd('move', handleRemoteMoveDetected);
     }
 
     function handleRemoteMoveDetected(indexOrSignal) {
-        hideStatusOverlay(); // Hide it once any sound is processed or we decide to re-listen
+        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
 
         if (typeof indexOrSignal !== 'number' || indexOrSignal < 0 || indexOrSignal > 8) {
             console.warn("Invalid move detected or wrong signal type for move:", indexOrSignal);
-            // If still opponent's turn and expecting a move, re-listen.
             if (gameActive && pvpRemoteActive && !isMyTurnInRemote && gamePaired) {
-                 console.log("Re-listening due to invalid signal.");
+                 console.log("Re-listening due to invalid signal for move.");
                  listenForRemoteMove(); 
             }
             return;
@@ -519,14 +564,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // At this point, currentPlayer is the opponent who just made the move
-        if (!makeMove(index, currentPlayer)) {
+        if (!makeMove(index, currentPlayer)) { // currentPlayer is the opponent who just made the move
             console.error("Failed to make remote move on board, cell might be taken despite checks.");
              if (gameActive && pvpRemoteActive && !isMyTurnInRemote && gamePaired) listenForRemoteMove();
             return;
         }
 
-        const win = checkWin(currentPlayer); // Check if the opponent (currentPlayer) won
+        const win = checkWin(currentPlayer); 
         if (win) {
             endGame(currentPlayer, win);
             return;
@@ -536,8 +580,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        switchPlayer(); // Switches currentPlayer to this device's player
-        isMyTurnInRemote = true; // Now it's this device's turn
+        switchPlayer(); 
+        isMyTurnInRemote = true; 
         statusDiv.textContent = `Tu Turno ${getPlayerName(currentPlayer)}`;
         setBoardClickable(true);
     }
@@ -546,32 +590,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const idx = +e.currentTarget.dataset.index;
         
         if (!gameActive || board[idx] !== null ) return;
-        if (pvpRemoteActive && (!isMyTurnInRemote || !gamePaired)) return; // If remote, must be my turn and paired
+        if (pvpRemoteActive && (!isMyTurnInRemote || !gamePaired)) return;
 
-        if (!makeMove(idx, currentPlayer)) return; // currentPlayer is this device's player
+        if (!makeMove(idx, currentPlayer)) return; 
 
         if (pvpRemoteActive && gamePaired) {
-            if (typeof sendMoveViaSound !== "function") {
-                 console.error("sendMoveViaSound is not defined!");
+            if (typeof sndMove !== "function") {
+                 console.error("sndMove is not defined!");
                  statusDiv.textContent = "Error: Función para enviar sonido no disponible.";
-                 // Potentially revert move or handle error
                  return;
             }
-            sendMoveViaSound(idx); 
+            sndMove(idx); 
         }
 
         const win = checkWin(currentPlayer);
         if(win){ endGame(currentPlayer,win); return; }
         if(checkDraw()){ endDraw(); return; }
 
-        switchPlayer(); // Switches to opponent for next turn display / CPU move
+        switchPlayer(); 
 
         if (pvpRemoteActive && gamePaired) {
             isMyTurnInRemote = false; 
-            statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`; // currentPlayer is now opponent
+            statusDiv.textContent = `Esperando a ${getPlayerName(currentPlayer)}...`; 
             setBoardClickable(false);
             listenForRemoteMove();
-        } else if(vsCPU && currentPlayer===currentSymbols.player2){ // currentPlayer is CPU
+        } else if(vsCPU && currentPlayer===currentSymbols.player2){ 
             setBoardClickable(false);
             setTimeout(()=>{ if(gameActive) cpuMove(); if(gameActive) setBoardClickable(true);},700+Math.random()*300);
         }
@@ -583,17 +626,16 @@ document.addEventListener('DOMContentLoaded', () => {
         switch(difficulty){
             case 'easy': idx=randomMove(); break;
             case 'medium': idx=Math.random()<.75?bestMove():randomMove(); break;
-            default: idx=bestMove(); // hard
+            default: idx=bestMove(); 
         }
-        if(idx===null || board[idx]!==null) idx=randomMove(); // Fallback if bestMove fails or returns taken
-        if(idx===null){ if(checkDraw()) endDraw(); return; } // No moves left
+        if(idx===null || board[idx]!==null) idx=randomMove(); 
+        if(idx===null){ if(checkDraw()) endDraw(); return; } 
 
-        makeMove(idx,currentSymbols.player2); // CPU is always player2
+        makeMove(idx,currentSymbols.player2); 
         const win=checkWin(currentSymbols.player2);
         if(win){ endGame(currentSymbols.player2,win); return; }
         if(checkDraw()){ endDraw(); return; }
-        switchPlayer(); // Switch back to human player
-        // setBoardClickable(true) is handled by the calling context of cpuMove in init or handleCellClick
+        switchPlayer(); 
     }
 
     function randomMove(){
@@ -602,16 +644,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function bestMove(){
-        // Try to win
         for(let i=0;i<9;i++)if(!board[i]){board[i]=currentSymbols.player2;if(checkWin(currentSymbols.player2)){board[i]=null;return i;}board[i]=null;}
-        // Try to block
         for(let i=0;i<9;i++)if(!board[i]){board[i]=currentSymbols.player1;if(checkWin(currentSymbols.player1)){board[i]=null;return i;}board[i]=null;}
-        // Center
         if(board[4]===null) return 4;
-        // Corners
         const corners=[0,2,6,8].filter(i=>board[i]===null);
         if(corners.length) return corners[Math.floor(Math.random()*corners.length)];
-        // Random (should be covered by corners or earlier returns if game not full)
         return randomMove();
     }
 
@@ -625,11 +662,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function endGame(playerSymbol, winningCells){
-        if(!gameActive) return; // Prevent multiple calls
+        if(!gameActive) return; 
         gameActive=false; 
         setBoardClickable(false);
-        hideStatusOverlay();
-        if(typeof stopListening === "function") stopListening();
+        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
+        if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
 
         if(winningCells) winningCells.forEach(i=>cells[i].classList.add('rainbow'));
         statusDiv.textContent=`¡${getPlayerName(playerSymbol)} ganó!`; statusDiv.classList.add('highlight');
@@ -649,8 +686,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!gameActive) return;
         gameActive=false; 
         setBoardClickable(false);
-        hideStatusOverlay();
-        if(typeof stopListening === "function") stopListening();
+        if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
+        if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
 
         statusDiv.textContent='¡Empate!'; statusDiv.classList.add('highlight');
         draws++;localStorage.setItem('draws',draws);lastWinner=null;previousGameExists=true;
@@ -664,8 +701,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function switchPlayer(){
         currentPlayer = (currentPlayer===currentSymbols.player1)?currentSymbols.player2:currentSymbols.player1;
-        // Status updates are handled by calling functions (handleCellClick, handleRemoteMoveDetected, init)
-        // to provide more context-specific messages, especially for remote play.
     }
 
     function updateScoreboard(){
@@ -676,15 +711,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!soundEnabled||!getAudioContext()|| (audioCtx && audioCtx.state!=='running') ) return;
         try{
             const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);
-            let f1=440,t=.2,gV=.08,wT='sine'; // Default values
+            let f1=440,t=.2,gV=.08,wT='sine'; 
             switch(type){
                 case'move':f1=300+Math.random()*200;t=.15;gV=.06;wT='triangle';break;
                 case'win':f1=600;const f2=900,f3=1200;t=.7;gV=.1;wT='sawtooth';o.frequency.setValueAtTime(f1,audioCtx.currentTime);o.frequency.linearRampToValueAtTime(f2,audioCtx.currentTime+t*.33);o.frequency.linearRampToValueAtTime(f3,audioCtx.currentTime+t*.66);break;
                 case'draw':f1=330;const fD2=220;t=.4;gV=.07;wT='square';o.frequency.setValueAtTime(f1,audioCtx.currentTime);o.frequency.linearRampToValueAtTime(fD2,audioCtx.currentTime+t*.5);break;
                 case'reset':f1=500;const fR2=300;t=.25;gV=.05;wT='sine';o.frequency.setValueAtTime(f1,audioCtx.currentTime);o.frequency.linearRampToValueAtTime(fR2,audioCtx.currentTime+t*.5);break;
-                default:return; // Unknown sound type
+                default:return; 
             }
-            o.type=wT;if(!['win','draw','reset'].includes(type)) o.frequency.setValueAtTime(f1,audioCtx.currentTime); // Set frequency if not complex
+            o.type=wT;if(!['win','draw','reset'].includes(type)) o.frequency.setValueAtTime(f1,audioCtx.currentTime); 
             g.gain.setValueAtTime(gV,audioCtx.currentTime);
             o.start();g.gain.exponentialRampToValueAtTime(.00001,audioCtx.currentTime+t);o.stop(audioCtx.currentTime+t+.05);
         }catch(err){console.error("Error playing sound:",err);}
@@ -700,8 +735,8 @@ document.addEventListener('DOMContentLoaded', () => {
         soundEnabled=!soundEnabled;localStorage.setItem('soundDisabled',!soundEnabled);
         if(soundEnabled) initAudioOnInteraction(); else {
             if(audioCtx&&audioCtx.state==='running') audioCtx.suspend().catch(e => console.error("Error suspending audio context:", e));
-            if(typeof stopListening === "function") stopListening(); 
-            hideStatusOverlay();
+            if(typeof stopSndListening === "function") stopSndListening(); else console.warn("stopSndListening is not defined");
+            if (typeof hideOverlay === "function") hideOverlay(); else console.warn("hideOverlay is not defined");
         }
         updateAllUIToggleButtons(); if(soundEnabled) playSound('move');
     }
@@ -710,33 +745,31 @@ document.addEventListener('DOMContentLoaded', () => {
         currentSymbolIndex=(currentSymbolIndex+1)%symbolSet.length;localStorage.setItem('currentSymbolIndex',currentSymbolIndex);
         currentSymbols=symbolSet[currentSymbolIndex];
         
-        // If game was in progress, current player symbol might need update if it was one of the old ones
         const oldPlayer1Symbol = symbolSet[(currentSymbolIndex - 1 + symbolSet.length) % symbolSet.length].player1;
         const oldPlayer2Symbol = symbolSet[(currentSymbolIndex - 1 + symbolSet.length) % symbolSet.length].player2;
         if (currentPlayer === oldPlayer1Symbol) currentPlayer = currentSymbols.player1;
         else if (currentPlayer === oldPlayer2Symbol) currentPlayer = currentSymbols.player2;
 
         const rDiv=document.getElementById('results');
-        rDiv.childNodes[0].nodeValue=currentSymbols.player1+' '; // Update text node for P1 symbol
-        rDiv.childNodes[2].nodeValue=' – '+currentSymbols.player2+' '; // Update text node for P2 symbol
+        rDiv.childNodes[0].nodeValue=currentSymbols.player1+' '; 
+        rDiv.childNodes[2].nodeValue=' – '+currentSymbols.player2+' '; 
         
         playSound('move'); 
-        init(); // Reinitialize to update board and status with new symbols
+        init(); 
     }
 
     /* ----------  EVENT LISTENERS  ---------- */
     cells.forEach(c=>{c.addEventListener('click',handleCellClick);c.setAttribute('tabindex','0');c.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();c.click();}});});
     
-    restartBtn.addEventListener('click',init); // Hidden button, mostly triggered by icon
+    restartBtn.addEventListener('click',init); 
 
     restartIcon.addEventListener('click', () => {
-        stopAnyGameInProgress(); // Stops listeners, clears board etc.
-        if (pvpRemoteActive) { // If it was a remote game
-            pvpRemoteActive = false; // End remote session
-            gamePaired = false;      // Reset paired status
-             // UI will update via init() to show Host/Join options again.
+        stopAnyGameInProgress(); 
+        if (pvpRemoteActive) { 
+            pvpRemoteActive = false; 
+            gamePaired = false;      
         }
-        init(); // Re-initialize the game (will go to local PvP by default if no other mode is active)
+        init(); 
         if (sideMenu.classList.contains('open')) sideMenu.classList.remove('open');
     });
 
@@ -745,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
         vsCPU=false;
         pvpRemoteActive = false;
         gamePaired = false;
-        init(); // This will set pvpLocalBtn active via updateAllUIToggleButtons
+        init(); 
     });
 
     hostGameBtn.addEventListener('click', handleHostGame);
@@ -756,16 +789,13 @@ document.addEventListener('DOMContentLoaded', () => {
         vsCPU=true;
         pvpRemoteActive = false;
         gamePaired = false;
-        init(); // This will set cpuBtn active
+        init(); 
     });
 
     [easyBtn,mediumBtn,hardBtn].forEach(btn=>btn.addEventListener('click',e=>{
         difficulty=e.target.id.replace('Btn','');
         updateAllUIToggleButtons();
         playSound('move');
-        // Only re-init if a game is not active or if it's a CPU game settings change.
-        // Avoid re-init if remote game is paired and active, or if a local game is active.
-        // Player can change CPU difficulty mid-thought, but usually applied on next game.
         if(!gameActive || vsCPU) init();
     }));
 
@@ -774,25 +804,17 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('whoGoesFirstSetting',whoGoesFirstSetting);
         updateAllUIToggleButtons();
         playSound('move');
-        // This setting primarily affects local PvP and vs CPU.
-        // For PvP Remote, host (P1) always starts currently.
-        // Re-init only if no game is active or board is clear to apply new start setting.
         if(!gameActive || board.every(c=>c===null)) init();
     }));
 
     changeSymbolsBtn.addEventListener('click',changeSymbols);
     themeToggle.addEventListener('click',toggleTheme);
     soundToggle.addEventListener('click',toggleSound);
-    document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false}); // Prevent double click zoom
+    document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false}); 
 
     /* ----------  INICIALIZACIÓN  ---------- */
     if(localStorage.getItem('darkTheme')==='true') document.body.classList.add('dark-theme');
     updateScoreboard();
-    
-    // Default to local PvP active if no other mode is explicitly set (e.g. from localStorage or a unfinished remote session)
-    // The init() function will call updateAllUIToggleButtons() which handles the visual state.
-    // The actual mode (vsCPU, pvpRemoteActive) should be false by default unless specific buttons are clicked.
-    // pvpLocalBtn will become active via updateAllUIToggleButtons if others are false.
     init(); 
 });
 
