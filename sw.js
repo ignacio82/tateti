@@ -1,18 +1,17 @@
-/* Ta-Te-Ti Deluxe service worker – 2025-05-24 */
-const CACHE_NAME = 'tateti-v1';
+/* Ta-Te-Ti Deluxe service worker – 2025-05-25 */
+const CACHE_NAME = 'tateti-v1.6';
+
 const APP_ASSETS = [
-  './',               // index.html
+  './',
   './index.html',
   './manifest.json',
   './sw.js',
-  // fonts  (Google fonts are cached transparently by Chrome; list them if you prefer)
-  // icons
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/maskable-512.png'
 ];
 
-// 1️⃣ Install – add core files to cache
+// 1️⃣ Install – cache static assets
 self.addEventListener('install', evt => {
   evt.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(APP_ASSETS))
@@ -20,7 +19,7 @@ self.addEventListener('install', evt => {
   self.skipWaiting();
 });
 
-// 2️⃣ Activate – clean up old caches
+// 2️⃣ Activate – clean old caches
 self.addEventListener('activate', evt => {
   evt.waitUntil(
     caches.keys().then(keys =>
@@ -30,13 +29,13 @@ self.addEventListener('activate', evt => {
   self.clients.claim();
 });
 
-// 3️⃣ Fetch – respond from cache first, fall back to network
+// 3️⃣ Fetch – serve from cache, fall back to network
 self.addEventListener('fetch', evt => {
-  if (evt.request.method !== 'GET') return;           // ignore POST etc.
+  if (evt.request.method !== 'GET') return;
+
   evt.respondWith(
-    caches.match(evt.request).then(
-      cached => cached || fetch(evt.request).then(res => {
-        // Optionally: add new resources to cache
+    caches.match(evt.request).then(cached =>
+      cached || fetch(evt.request).then(res => {
         if (res.ok) {
           const clone = res.clone();
           caches.open(CACHE_NAME).then(c => c.put(evt.request, clone));

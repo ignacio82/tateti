@@ -136,10 +136,11 @@
     <nav id="side-menu" class="side-menu" aria-label="Opciones">
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
-            <div class="mode" aria-label="Seleccionar modo">
-                <button id="pvpBtn" class="std mode-btn active">Jugador vs Jugador</button>
-                <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
-            </div>
+                <div class="mode" aria-label="Seleccionar modo">
+                    <button id="pvpLocalBtn" class="std mode-btn active">Mismo Dispositivo</button>
+                    <button id="pvpRemoteBtn" class="std mode-btn">Distintos Dispositivos</button>
+                    <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+                </div>
             <div><span>Dificultad CPU:</span></div>
             <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;">
                 <button id="easyBtn" class="std difficulty-btn">Fácil</button>
@@ -162,6 +163,25 @@
 
     <button id="restartBtn" aria-hidden="true" style="display:none;">Restart</button>
 
+  <!-- Status overlay for listening mode -->
+  <div id="statusOverlay" style="
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #fff4f6;
+    color: #ff1493;
+    border: 2px solid #ff69b4;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    z-index: 1001;
+    display: none;
+    font-family: 'Bubblegum Sans', cursive;
+  ">Esperando el movimiento del otro jugador...</div>
+  
+<script src="sound-multiplayer.js"></script>
 <script>
 /****************************************************
  * GAME LOGIC *
