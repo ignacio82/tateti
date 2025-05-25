@@ -42,29 +42,41 @@
         <p style="font-size: 0.9em; margin-top: 10px; color: var(--pink);">Share this ID (or scan QR) with Player 2:</p>
         <textarea id="qr-text-data" rows="2" style="width: 95%; font-size: 0.9em; padding: 5px; border-radius: var(--radius); border: 1px solid var(--pink-light); text-align: center;" readonly></textarea>
     </div>
-
+    
     <nav id="side-menu" class="side-menu" aria-label="Opciones">
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
-                <div class="mode" aria-label="Seleccionar modo">
-                    <button id="pvpLocalBtn" class="std mode-btn active">Mismo Dispositivo</button>
-                    <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
-                    <button id="joinGameBtn" class="std mode-btn">Unirse a Juego Remoto</button>
-                    <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
-                </div>
-            <div><span>Dificultad CPU:</span></div>
+            <div class="mode" aria-label="Seleccionar modo">
+                <button id="pvpLocalBtn" class="std mode-btn active">Mismo Dispositivo</button>
+                <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                <button id="joinGameBtn" class="std mode-btn">Unirse a Juego Remoto</button>
+                <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+            </div>
+
+            <div id="player-customization" style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);">
+                <div style="text-align: center; margin-bottom: 5px; color: var(--pink-dark);"><span>Personalizar Jugador:</span></div>
+                <div><label for="playerNameInput" style="font-size:0.9em; color: var(--pink-dark);">Tu Nombre:</label></div>
+                <input type="text" id="playerNameInput" placeholder="Jugador" maxlength="15" style="width: 90%; padding: 8px; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--pink-light); box-sizing: border-box;">
+                
+                <div><label style="font-size:0.9em; color: var(--pink-dark);">Tu Icono:</label></div>
+                <div id="iconSelection" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 10px; padding: 5px;">
+                    </div>
+                <button id="savePlayerPrefsBtn" class="std" style="width: 90%; box-sizing: border-box;">Guardar Preferencias</button>
+            </div>
+            <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Dificultad CPU:</span></div>
             <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;">
                 <button id="easyBtn" class="std difficulty-btn">Fácil</button>
                 <button id="mediumBtn" class="std difficulty-btn active">Normal</button>
                 <button id="hardBtn" class="std difficulty-btn">Difícil</button>
             </div>
-            <div><span>Quién Empieza:</span></div>
+
+            <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Quién Empieza (Local/CPU):</span></div>
             <div class="game-start-options" aria-label="Seleccionar quién empieza">
                 <button id="player1StartsBtn" class="std start-option-btn">Jugador 1</button>
                 <button id="randomStartsBtn" class="std start-option-btn">Aleatorio</button>
                 <button id="loserStartsBtn" class="std start-option-btn">Perdedor</button>
             </div>
-            <button id="changeSymbolsBtn" class="std" style="margin-top:10px;">Cambiar símbolos</button>
+            <button id="changeSymbolsBtn" class="std" style="margin-top:10px;">Cambiar Símbolos (Predeterminados)</button>
         </div>
         <div style="margin-top:auto; display:flex; justify-content:space-around; padding-top:20px;">
             <button id="soundToggle" class="icon-btn" aria-label="Sonido">🔊</button>
@@ -91,8 +103,8 @@
     font-family: 'Bubblegum Sans', cursive;
   ">Esperando el movimiento del otro jugador...</div>
 
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script> 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script> 
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <script src="peerjs-multiplayer.js"></script>
 <script src="game.js"></script> 
 </body>
