@@ -77,15 +77,43 @@ export function hideOverlay(){
   document.getElementById('statusOverlay')?.style.setProperty('display','none');
 }
 
-export function setBoardClickable(clickable){
+export function setBoardClickable(clickable) {
   if (!gameBoardEl) return;
+
   gameBoardEl.style.pointerEvents = clickable ? 'auto' : 'none';
-  cells.forEach(cell=>{
-    cell.classList.toggle('disabled',!clickable);
-    if (cell.querySelector('span')?.textContent === '')
-      cell.style.cursor = clickable ? 'pointer' : 'default';
+
+  cells.forEach(cell => {
+    const span = cell.querySelector('span');
+    const symbolInCell = span ? span.textContent : ''; // Renamed to avoid conflict with imported 'symbol'
+
+    // Determine if the current cell contains a piece that the current player can move
+    // This is relevant only in 3-Pieces mode, during the MOVING phase.
+    const isMyMovablePiece =
+      clickable && // Board must be generally clickable
+      state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+      state.gamePhase === state.GAME_PHASES.MOVING &&
+      symbolInCell === state.currentPlayer && // The piece in the cell belongs to the current player
+      state.isMyTurnInRemote; // Specifically for remote games, ensure it's this client's turn based on isMyTurnInRemote
+      // For local/CPU, state.currentPlayer is sufficient. For remote, state.isMyTurnInRemote is the authority for "my" turn.
+      // If it's a local game or vs CPU, state.isMyTurnInRemote won't be a factor (or should align).
+      // The critical check is `symbolInCell === state.currentPlayer`.
+      // For remote games, if it's my turn, state.currentPlayer should be state.myEffectiveIcon.
+
+    // A cell should be enabled (not disabled, clickable) if:
+    // 1. The board is generally clickable.
+    // 2. AND (The cell is empty OR it's one of my movable pieces in 3-Pieces MOVING phase)
+    const shouldEnable = clickable && (symbolInCell === '' || isMyMovablePiece);
+
+    cell.classList.toggle('disabled', !shouldEnable);
+    cell.style.cursor = shouldEnable ? 'pointer' : 'default';
+
+    // Original logic for empty cells:
+    // if (cell.querySelector('span')?.textContent === '') {
+    //   cell.style.cursor = clickable ? 'pointer' : 'default';
+    // }
   });
 }
+
 
 export function playDrawAnimation(){
   statusDiv?.classList.add('highlight-draw-flash');
@@ -131,17 +159,17 @@ export function launchConfetti(){
 export const removeConfetti = () => document.getElementById(confettiContainerId)?.remove();
 
 /* ----------  Cell helpers  ---------- */
-export function updateCellUI(idx,symbol){
+export function updateCellUI(idx,symbol){ // 'symbol' here is the piece to place, not imported
   const cell = cells[idx];
   if(!cell) return;
   const span = cell.querySelector('span');
-  (span??cell).textContent = symbol || '';
-  if(symbol){
-    cell.classList.add('disabled');
+  (span??cell).textContent = symbol || ''; // Use the passed 'symbol'
+  if(symbol){ // If placing a symbol
+    cell.classList.add('disabled'); // Initially disable cells with pieces
     cell.style.cursor = 'default';
-  }else{
+  }else{ // If clearing a symbol (cell becomes empty)
     cell.classList.remove('disabled');
-    cell.style.cursor = 'pointer';
+    cell.style.cursor = 'pointer'; // Empty cells are clickable if board is clickable
   }
   cell.classList.remove('rainbow','hint','selected-piece-to-move');
   if(symbol){
@@ -152,9 +180,11 @@ export function updateCellUI(idx,symbol){
 
 export const clearBoardUI = () => {
   cells.forEach(c=>{
-    c.querySelector('span').textContent = '';
+    if (c.querySelector('span')) { // Ensure span exists
+        c.querySelector('span').textContent = '';
+    }
     c.classList.remove('rainbow','hint','disabled','selected-piece-to-move');
-    c.style.cursor = 'pointer';
+    c.style.cursor = 'pointer'; // Initially, all cells are pointers after clear if board is clickable
   });
   removeConfetti();
 };
@@ -198,44 +228,44 @@ export function updateAllUIToggleButtons(){
 
   if(state.pvpRemoteActive){
     if(state.iAmPlayer1InRemote) hostGameBtn?.classList.add('active');
-    // Joiner doesn't get an active button, implied by remote state
   }else if(state.vsCPU){
     cpuBtn?.classList.add('active');
-  }else{ // Default to Local PvP if not remote or vs CPU
+  }else{ 
     pvpLocalBtn?.classList.add('active');
   }
 
-  /* CPU difficulty visible only if vsCPU is active */
-  const showDiff = state.vsCPU; // MODIFIED: No longer depends on gameVariant
-  difficultyDiv.style.display = showDiff ? 'flex' : 'none';
+  const showDiff = state.vsCPU; 
+  if (difficultyDiv) difficultyDiv.style.display = showDiff ? 'flex' : 'none';
 
-  if(showDiff){
-    [easyBtn,mediumBtn,hardBtn].forEach(b=>b?.classList.remove('active'));
-    ({easy:easyBtn, hard:hardBtn}[state.difficulty] ?? mediumBtn)?.classList.add('active');
+
+  if(showDiff && easyBtn && mediumBtn && hardBtn){ // Ensure buttons exist
+    [easyBtn,mediumBtn,hardBtn].forEach(b=>b.classList.remove('active'));
+    const activeDifficultyBtn = state.difficulty === 'easy' ? easyBtn :
+                                state.difficulty === 'hard' ? hardBtn : mediumBtn;
+    activeDifficultyBtn.classList.add('active');
   }
 
-  /* start-options hidden for remote games */
   const startWrap  = document.querySelector('.game-start-options');
   const startTitle = startWrap?.previousElementSibling;
   const showStart  = !state.pvpRemoteActive;
   if(startWrap)  startWrap.style.display  = showStart ? 'flex' : 'none';
   if(startTitle) startTitle.style.display = showStart ? 'block': 'none';
-  if(showStart){
-    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(b=>b?.classList.remove('active'));
-    ({player1:player1StartsBtn, random:randomStartsBtn, loser:loserStartsBtn}[state.whoGoesFirstSetting] ?? player1StartsBtn)?.classList.add('active');
+
+  if(showStart && player1StartsBtn && randomStartsBtn && loserStartsBtn){ // Ensure buttons exist
+    [player1StartsBtn,randomStartsBtn,loserStartsBtn].forEach(b=>b.classList.remove('active'));
+     const activeStartBtn = state.whoGoesFirstSetting === 'player1' ? player1StartsBtn :
+                            state.whoGoesFirstSetting === 'random'  ? randomStartsBtn :
+                            state.whoGoesFirstSetting === 'loser'   ? loserStartsBtn  : player1StartsBtn;
+    activeStartBtn.classList.add('active');
   }
 
-  // CPU button is no longer disabled based on game variant
-  // const cpuDisabled = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE; // REMOVED
   if(cpuBtn){
-    cpuBtn.disabled = false; // MODIFIED: Ensure CPU button is not disabled by default here
-    cpuBtn.classList.remove('disabled'); // MODIFIED: Ensure 'disabled' class is removed
+    cpuBtn.disabled = false; 
+    cpuBtn.classList.remove('disabled'); 
   }
 
-  /* sync the 3-piece toggle */
   if(threePieceToggle) threePieceToggle.checked = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE;
 
-  /* glyphs for theme / sound */
   updateThemeToggleButton(document.body.classList.contains('dark-theme'));
   updateSoundToggleButton(state.soundEnabled);
 }
@@ -284,17 +314,23 @@ export function displayQRCode(gameLink){
     element:qrCodeCanvas,value:gameLink,size:180,padding:10,level:'H',
     foreground:'#ff1493',background:'#fff8fb'
   });
-  copyHostIdBtn.textContent = 'Copiar Enlace del Juego';
-  copyHostIdBtn.dataset.gameLink = gameLink;
-  copyHostIdBtn.classList.remove('copied');
+  if(copyHostIdBtn) { // Ensure button exists
+    copyHostIdBtn.textContent = 'Copiar Enlace del Juego';
+    copyHostIdBtn.dataset.gameLink = gameLink;
+    copyHostIdBtn.classList.remove('copied');
+  }
   qrDisplayArea.classList.add('modal');
   qrDisplayArea.style.display = 'flex';
 }
 export function hideQRCode(){
-  qrDisplayArea?.style.setProperty('display','none');
-  qrDisplayArea?.classList.remove('modal');
-  copyHostIdBtn?.classList.remove('copied');
-  copyHostIdBtn && (copyHostIdBtn.textContent = 'Copiar Enlace del Juego');
+  if (qrDisplayArea) {
+    qrDisplayArea.style.setProperty('display','none');
+    qrDisplayArea.classList.remove('modal');
+  }
+  if(copyHostIdBtn){
+    copyHostIdBtn.classList.remove('copied');
+    copyHostIdBtn.textContent = 'Copiar Enlace del Juego';
+  }
 }
 
 /* =========================================================================
