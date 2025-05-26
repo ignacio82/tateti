@@ -115,6 +115,18 @@ export function setCurrentSymbolIndex(index) {
     currentSymbolIndex = index;
     currentSymbols = symbolSet[currentSymbolIndex];
 }
+
+// Added setter functions for scores
+export function setMyWins(wins) {
+    myWins = wins;
+}
+export function setOpponentWins(wins) {
+    opponentWins = wins;
+}
+export function setDraws(numDraws) {
+    draws = numDraws;
+}
+
 export function incrementMyWins() {
     myWins++;
 }

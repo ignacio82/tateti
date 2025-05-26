@@ -14,14 +14,33 @@ export function setCpuMoveHandler(handler) {
     cpuMoveHandler = handler;
 }
 
-let updateScoreboardHandler = () => console.warn("updateScoreboardHandler not yet implemented in gameLogic.js");
+let _updateScoreboardHandler = () => ui.updateScoreboard(); // Default to direct call
 export function setUpdateScoreboardHandler(handler) {
-    updateScoreboardHandler = handler;
+    _updateScoreboardHandler = handler;
+}
+// Make updateScoreboardHandler an exported function that calls the internal one
+export function updateScoreboardHandler() {
+    if (typeof _updateScoreboardHandler === 'function') {
+        _updateScoreboardHandler();
+    } else {
+        console.warn("Actual _updateScoreboardHandler not set or not a function, using default ui.updateScoreboard.");
+        ui.updateScoreboard();
+    }
 }
 
-let updateAllUITogglesHandler = () => console.warn("updateAllUITogglesHandler not yet implemented in gameLogic.js");
+
+let _updateAllUITogglesHandler = () => ui.updateAllUIToggleButtons(); // Default to direct call
 export function setUpdateAllUITogglesHandler(handler) {
-    updateAllUITogglesHandler = handler;
+    _updateAllUITogglesHandler = handler;
+}
+// Make updateAllUITogglesHandler an exported function that calls the internal one
+export function updateAllUITogglesHandler() {
+    if (typeof _updateAllUITogglesHandler === 'function') {
+        _updateAllUITogglesHandler();
+    } else {
+        console.warn("Actual _updateAllUITogglesHandler not set or not a function, using default ui.updateAllUIToggleButtons.");
+        ui.updateAllUIToggleButtons();
+    }
 }
 
 
@@ -46,13 +65,8 @@ export function checkWin(playerSymbol, boardToCheck = state.board) { //
  * @returns {boolean} True if it's a draw, false otherwise.
  */
 export function checkDraw(boardToCheck = state.board) { //
-    // A draw occurs if all cells are filled and no one has won.
-    // Ensure gameP1Icon and gameP2Icon are set before calling this, usually via determineEffectiveIcons.
     if (!state.gameP1Icon || !state.gameP2Icon) {
         // console.warn("checkDraw called before gameP1Icon or gameP2Icon was set.");
-        // If icons aren't set, it's unlikely a valid game state for a draw check.
-        // However, simply checking for all cells filled is a common approach.
-        // The original checkWin calls within checkDraw implicitly handle this.
     }
     return boardToCheck.every(cell => cell !== null) &&
            !checkWin(state.gameP1Icon, boardToCheck) &&
@@ -75,39 +89,31 @@ export function init() { //
     ui.removeConfetti(); ui.hideOverlay(); ui.hideQRCode();
     ui.clearBoardUI();
 
-    // Check if we are in a remote game setup phase (e.g., host waiting for joiner)
-    // This logic might need refinement based on how peerConnection.js handles states.
     const isHostBtnActive = ui.hostGameBtn?.classList.contains('active');
     const isJoinBtnActive = ui.joinGameBtn?.classList.contains('active');
 
     if (!isHostBtnActive && !isJoinBtnActive) {
-        // If not actively trying to host or join, and a pvpRemote session exists, close it.
         if (state.pvpRemoteActive && window.peerJsMultiplayer?.close) {
-             window.peerJsMultiplayer.close(); // This should trigger onConnectionClose if connected.
+             window.peerJsMultiplayer.close();
         }
-        // Ensure remote state is fully reset if not in a remote setup process
         state.setPvpRemoteActive(false);
         state.setGamePaired(false);
     }
 
-
     state.setBoard(Array(9).fill(null));
-    // Difficulty is typically set via UI interaction, not reset in init unless intended.
-    // state.setDifficulty(ui.easyBtn.classList.contains('active')?'easy':ui.hardBtn.classList.contains('active')?'hard':'medium');
-    state.setGameActive(false); // Will be set true if game actually starts
+    state.setGameActive(false);
 
     player.determineEffectiveIcons();
 
     if (state.pvpRemoteActive && state.gamePaired) {
-        state.setCurrentPlayer(state.gameP1Icon); // Host (gameP1Icon) always starts a new remote round
+        state.setCurrentPlayer(state.gameP1Icon);
         state.setIsMyTurnInRemote(state.currentPlayer === state.myEffectiveIcon);
         ui.updateStatus(state.isMyTurnInRemote ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}` : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
         ui.setBoardClickable(state.isMyTurnInRemote);
         state.setGameActive(true);
-    } else if (state.pvpRemoteActive && !state.gamePaired) { // Waiting for connection
+    } else if (state.pvpRemoteActive && !state.gamePaired) {
         ui.setBoardClickable(false);
         state.setGameActive(false);
-        // Status like "Waiting for connection" should be set by peerConnection.js logic
     } else { // Local PvP or Vs CPU
         state.setGameActive(true);
         let startingPlayer;
@@ -121,22 +127,27 @@ export function init() { //
         state.setCurrentPlayer(startingPlayer);
         ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
 
-        if (state.vsCPU && state.currentPlayer === state.gameP2Icon) { // If CPU (gameP2Icon) starts
+        if (state.vsCPU && state.currentPlayer === state.gameP2Icon) {
             ui.setBoardClickable(false);
             setTimeout(() => {
-                if(state.gameActive) cpuMoveHandler(); // Call the CPU move
+                if(state.gameActive) cpuMoveHandler();
                 if(state.gameActive) ui.setBoardClickable(true);
             }, 700 + Math.random() * 300);
-        } else { // Player starts (vs CPU) or Local PvP turn
+        } else {
             ui.setBoardClickable(true);
         }
     }
 
-    if (updateAllUITogglesHandler) updateAllUITogglesHandler();
-    if (updateScoreboardHandler) updateScoreboardHandler();
+    updateAllUITogglesHandler(); // Call the exported wrapper
+    updateScoreboardHandler(); // Call the exported wrapper
 
     if(state.gameActive && !(state.pvpRemoteActive && !state.gamePaired)) {
-        sound.playSound('reset'); //
+        // Check if audio context is ready before playing sound, or defer
+        if (sound.getAudioContext() && sound.getAudioContext().state === 'running') {
+            sound.playSound('reset');
+        } else {
+            console.log("Audio context not ready for init sound, will play on user gesture.");
+        }
     }
     if (ui.sideMenu && ui.sideMenu.classList.contains('open')) ui.sideMenu.classList.remove('open');
 }
@@ -175,24 +186,23 @@ export function endGame(winnerSymbol, winningCells) { //
     state.setLastWinner(winnerSymbol); //
     state.setPreviousGameExists(true); //
 
-    // Determine who the winnerSymbol corresponds to for score update
     if (state.pvpRemoteActive || state.vsCPU) {
          if(winnerSymbol === state.myEffectiveIcon) state.incrementMyWins();
          else if (winnerSymbol === state.opponentEffectiveIcon) state.incrementOpponentWins();
-    } else { // For local PvP games
-        if (winnerSymbol === state.gameP1Icon) state.incrementMyWins(); // P1 on board is "my" score slot
-        else if (winnerSymbol === state.gameP2Icon) state.incrementOpponentWins(); // P2 is "opponent"
+    } else {
+        if (winnerSymbol === state.gameP1Icon) state.incrementMyWins();
+        else if (winnerSymbol === state.gameP2Icon) state.incrementOpponentWins();
     }
 
-    localStorage.setItem('myWinsTateti', state.myWins); //
-    localStorage.setItem('opponentWinsTateti', state.opponentWins); //
-    if(updateScoreboardHandler) updateScoreboardHandler();
+    localStorage.setItem('myWinsTateti', state.myWins.toString());
+    localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
+    updateScoreboardHandler(); // Call the exported wrapper
 
     const delay = state.AUTO_RESTART_DELAY_WIN; //
     if (state.pvpRemoteActive && state.gamePaired) {
         ui.showOverlay(`${player.getPlayerName(winnerSymbol)} GANA! Nueva partida en ${delay / 1000}s...`);
-        setTimeout(init, delay); // AUTOMATIC RESTART for remote games
-    } else { // Local or CPU games
+        setTimeout(init, delay);
+    } else {
         setTimeout(init, delay);
     }
 }
@@ -209,14 +219,14 @@ export function endDraw() { //
     state.incrementDraws(); //
     state.setLastWinner(null); //
     state.setPreviousGameExists(true); //
-    localStorage.setItem('drawsTateti', state.draws); //
-    if (updateScoreboardHandler) updateScoreboardHandler();
+    localStorage.setItem('drawsTateti', state.draws.toString());
+    updateScoreboardHandler(); // Call the exported wrapper
 
     const delay = state.AUTO_RESTART_DELAY_DRAW; //
     if (state.pvpRemoteActive && state.gamePaired) {
         ui.showOverlay(`¡EMPATE! Nueva partida en ${delay / 1000}s...`);
-        setTimeout(init, delay); // AUTOMATIC RESTART for remote games
-    } else { // Local or CPU games
+        setTimeout(init, delay);
+    } else {
         setTimeout(init, delay);
     }
 }
