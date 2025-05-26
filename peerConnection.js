@@ -74,7 +74,7 @@ const peerJsCallbacks = {
 
         if (data.type === 'full_state_update') {
             console.log('[P2P] Processing full_state_update received:', data);
-            const { board, currentPlayer, gamePhase, gameActive, winner, draw } = data;
+            const { board, currentPlayer, gamePhase, gameActive, winner, draw, selectedPieceIndex } = data;
 
             if (!board || !Array.isArray(board) || board.length !== 9 || !currentPlayer || !gamePhase || typeof gameActive !== 'boolean') {
                 console.error("[P2P] Received invalid full_state_update. Ignoring.", data);
@@ -83,24 +83,26 @@ const peerJsCallbacks = {
 
             const oldGameActive = state.gameActive;
 
+            // Update all state in the correct order
             state.setBoard([...board]);
             state.setCurrentPlayer(currentPlayer);
             state.setGamePhase(gamePhase);
             state.setGameActive(gameActive);
+            
+            // Handle selected piece index for 3-piece moving phase
+            if (selectedPieceIndex !== undefined) {
+                state.setSelectedPieceIndex(selectedPieceIndex);
+            }
 
-            ui.clearBoardUI(); // Clear board before repopulating
+            // Clear UI first, then repopulate
+            ui.clearBoardUI();
+            ui.clearSelectedPieceHighlight(); // Clear any previous selection highlights
             state.board.forEach((symbol, index) => ui.updateCellUI(index, symbol || null));
             
-            // Crucially, after board is updated and game state (phase, active) is set,
-            // call setBoardClickable to reflect new reality.
-            // This will be done after determining whose turn it is.
-
             player.determineEffectiveIcons(); 
             ui.updateScoreboard();
 
             if (!state.gameActive) { 
-                // ui.setBoardClickable(false); // Already done by gameLogic.endGame/endDraw or should be.
-                                            // Called explicitly here for safety if state comes from peer.
                 ui.setBoardClickable(false); 
                 console.log("[P2P] Game ended via full_state_update.");
                 if (winner) {
@@ -122,7 +124,7 @@ const peerJsCallbacks = {
                 return;
             }
 
-            // Game is active, set turn for local player
+            // Game is active, determine whose turn it is
             const myTurnNow = (state.currentPlayer === state.myEffectiveIcon);
             state.setIsMyTurnInRemote(myTurnNow);
             
@@ -180,6 +182,7 @@ const peerJsCallbacks = {
                     gameActive: state.gameActive,
                     winner: state.gameActive ? null : state.lastWinner,
                     draw: state.gameActive ? false : (!state.lastWinner && !state.gameActive && state.board.every(c=>c!==null)),
+                    selectedPieceIndex: state.selectedPieceIndex
                 };
                 sendPeerData(fullStateData); // Use the exported sendPeerData
             }
