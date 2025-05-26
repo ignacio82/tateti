@@ -306,4 +306,4 @@ export function closePeerSession() {
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.close === 'function') {
         window.peerJsMultiplayer.close();
     }
-}
+} 
