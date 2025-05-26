@@ -23,25 +23,45 @@ self.addEventListener('install', evt => {
 self.addEventListener('activate', evt => {
   evt.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
 });
 
-// 3️⃣ Fetch – serve from cache, fall back to network
+// 3️⃣ Fetch – serve from cache, fall back to network, skip non-HTTP(S)
 self.addEventListener('fetch', evt => {
-  if (evt.request.method !== 'GET') return;
+  const { request } = evt;
+  const url = new URL(request.url);
+
+  // Only handle GET requests for http/https
+  if (request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    return;
+  }
 
   evt.respondWith(
-    caches.match(evt.request).then(cached =>
-      cached || fetch(evt.request).then(res => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(evt.request, clone));
+    caches.match(request).then(cachedResponse => {
+      // Return cached if available
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      // Otherwise fetch from network and cache it
+      return fetch(request).then(networkResponse => {
+        if (!networkResponse || !networkResponse.ok) {
+          return networkResponse;
         }
-        return res;
-      })
-    )
+        const clone = networkResponse.clone();
+        caches.open(CACHE_NAME)
+          .then(cache => cache.put(request, clone))
+          .catch(() => {/* ignore cache write errors */});
+        return networkResponse;
+      }).catch(() => {
+        // Fetch failed (offline?) – could return a fallback asset here
+        return cachedResponse;
+      });
+    })
   );
 });
