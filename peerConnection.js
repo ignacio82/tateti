@@ -2,7 +2,7 @@
 import * as state from './state.js';
 import * as ui from './ui.js';
 import * as player from './player.js';
-import * as gameLogic from './gameLogic.js'; // Still needed for endGame/endDraw, hints, and local init
+import * as gameLogic from './gameLogic.js';
 import * as sound from './sound.js';
 
 const peerJsCallbacks = {
@@ -46,112 +46,116 @@ const peerJsCallbacks = {
         }
         ui.updateStatus("¡Conectado! Iniciando partida...");
         sound.playSound('win');
-        gameLogic.init();
+        gameLogic.init(); // Initialize game for both players on connection
     },
     onDataReceived: (data) => {
         console.log(`PeerConnection: RX @ ${new Date().toLocaleTimeString()}:`, JSON.parse(JSON.stringify(data)));
-        
+
         if (data.type === 'player_info') {
             state.setOpponentPlayerName(data.name || 'Oponente Remoto');
             state.setOpponentPlayerIcon(data.icon);
             player.determineEffectiveIcons();
             ui.updateScoreboard();
-            if (state.gameActive) { 
+            if (state.gameActive) {
                 ui.updateStatus(state.isMyTurnInRemote ?
                     `Tu Turno ${player.getPlayerName(state.currentPlayer)}` :
                     `Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
-            } else if (state.pvpRemoteActive && state.gamePaired) {
-                 // gameLogic.init(); // Already called onConnectionOpen
             }
             return;
         }
 
-        // **MODIFICATION: The specific guard `if (state.isMyTurnInRemote && data.type === 'full_state_update')` is removed.**
-        // The general guard below applies to non-full_state_update, non-restart packets.
-        // For 'full_state_update', we generally want to process it as it's authoritative.
-        if (data.type !== 'full_state_update' && data.type !== 'restart_request' && data.type !== 'restart_ack') {
-            // This guard is for unexpected packet types or if it's my turn and I receive an old 'move' type.
-            if (!state.gameActive || !state.pvpRemoteActive || !state.gamePaired || state.isMyTurnInRemote) {
-                console.warn("PeerConnection: RX non-sync/non-restart data but not expecting it (guard fail).", {
-                    isMyTurnInRemote: state.isMyTurnInRemote, gameActive: state.gameActive,
-                    pvpRemoteActive: state.pvpRemoteActive, gamePaired: state.gamePaired,
-                    dataType: data.type, localPhase: state.gamePhase, localPlayer: state.currentPlayer
-                });
+        // MODIFICATION FOR BUG 2: Handle 'move_piece' packet
+        if (data.type === 'move_piece') {
+            if (!state.gameActive || state.isMyTurnInRemote) { // Should only process if expecting opponent's move
+                console.warn("PeerConnection: Received 'move_piece' but not expecting it or it's my turn.", data);
                 return;
             }
+            console.log("[P2P] Processing move_piece received:", data);
+            const ok = gameLogic.movePiece(
+                data.from,
+                data.to,
+                state.opponentEffectiveIcon // The player who sent the slide (the opponent)
+            );
+            if (!ok) {
+                console.warn('[P2P] Desync: Illegal slide received via move_piece', data);
+                // Potentially request a full state sync here if desync is detected
+            }
+            // After gameLogic.movePiece, state.currentPlayer is now the local player (receiver)
+            // The UI update status and board clickability is handled by gameLogic.movePiece's call to switchPlayer -> showEasyModeHint
+            // and the subsequent CPU move logic if applicable, or enabling board for human.
+            // Explicitly ensure local player knows it's their turn.
+            if(state.currentPlayer === state.myEffectiveIcon && state.gameActive) {
+                state.setIsMyTurnInRemote(true);
+                ui.setBoardClickable(true);
+                // Status update is handled by movePiece -> switchPlayer
+                 if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
+                    ui.updateStatus(`${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`);
+                } else {
+                    ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
+                }
+                gameLogic.showEasyModeHint?.();
+            }
+            return;
         }
 
-        // ────────────────────────────────────────────────
-        //  Handle 'full_state_update' packets
-        // ────────────────────────────────────────────────
+
         if (data.type === 'full_state_update') {
             console.log('[P2P] Processing full_state_update received:', data);
 
-            // 1. Validate incoming data (basic checks)
-            if (!data.board || !Array.isArray(data.board) || data.board.length !== 9) {
-                console.error("[P2P] Received full_state_update with invalid board data. Ignoring.", data);
+            if (!data.board || !Array.isArray(data.board) || data.board.length !== 9 ||
+                !data.currentPlayer || !data.gamePhase || typeof data.gameActive !== 'boolean') {
+                console.error("[P2P] Received invalid full_state_update. Ignoring.", data);
                 return;
             }
-            if (!data.currentPlayer) { // currentPlayer in packet is whose turn it is NEXT
-                console.error("[P2P] Received full_state_update missing 'currentPlayer'. Ignoring.", data);
-                return;
-            }
-            if (!data.gamePhase) {
-                console.error("[P2P] Received full_state_update missing 'gamePhase'. Ignoring.", data);
-                return;
-            }
-            if (typeof data.gameActive !== 'boolean') {
-                console.error("[P2P] Received full_state_update missing 'gameActive' status. Ignoring.", data);
-                return;
+             // If it's my turn according to the incoming state, but I thought it wasn't, log for debugging.
+            if (data.currentPlayer === state.myEffectiveIcon && !state.isMyTurnInRemote && state.gameActive) {
+                console.log("[P2P] Full state update indicates it's now my turn.");
             }
 
-            // 2. Apply the authoritative game snapshot from sender
+
             state.setBoard([...data.board]);
-            state.setCurrentPlayer(data.currentPlayer); 
+            state.setCurrentPlayer(data.currentPlayer);
             state.setGamePhase(data.gamePhase);
-            state.setGameActive(data.gameActive); 
+            state.setGameActive(data.gameActive);
 
-            // 3. Redraw UI from the new authoritative state
-            ui.clearBoardUI(); 
+            ui.clearBoardUI();
             state.board.forEach((symbol, index) => {
-                if (symbol) {
-                    ui.updateCellUI(index, symbol); 
-                } else {
-                    ui.updateCellUI(index, null); 
-                }
+                ui.updateCellUI(index, symbol || null);
             });
-            ui.updateScoreboard?.(); 
+            ui.updateScoreboard?.();
 
-            // 4. Handle game over conditions based on the received state
-            if (!state.gameActive) { 
+            if (!state.gameActive) {
+                ui.setBoardClickable(false); // Ensure board is not clickable
                 if (data.winner) {
                     console.log("[P2P] Game ended per received state. Winner:", data.winner);
-                    // Ensure state.lastWinner is also updated for consistency if gameLogic.endGame isn't called
-                    state.setLastWinner(data.winner);
+                    state.setLastWinner(data.winner); // Make sure local state reflects winner
                     ui.updateStatus(`${player.getPlayerName(data.winner)} GANA!`);
-                    ui.setBoardClickable(false);
                     const winningCells = gameLogic.checkWin(data.winner, state.board);
                     if(winningCells) ui.highlightWinner(winningCells);
-                    ui.launchConfetti?.(); 
+                    ui.launchConfetti?.();
+                     // Score update should happen here based on received winner
+                    if (data.winner === state.myEffectiveIcon) state.setMyWins(state.myWins + 1); // Assuming state.myWins was current
+                    else state.setOpponentWins(state.opponentWins + 1);
+                    localStorage.setItem('myWinsTateti', state.myWins.toString());
+                    localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
+                    updateScoreboardHandler();
+
                 } else if (data.draw) {
                     console.log("[P2P] Game ended in a draw per received state.");
-                     state.setLastWinner(null); // Ensure lastWinner is null for a draw
+                    state.setLastWinner(null);
                     ui.updateStatus('¡EMPATE!');
-                    ui.setBoardClickable(false);
                     ui.playDrawAnimation?.();
+                    state.setDraws(state.draws + 1); // Assuming state.draws was current
+                    localStorage.setItem('drawsTateti', state.draws.toString());
+                    updateScoreboardHandler();
                 } else {
                      console.log("[P2P] Received inactive game state without winner/draw.");
-                     ui.updateStatus("Juego terminado."); 
-                     ui.setBoardClickable(false);
+                     ui.updateStatus("Juego terminado.");
                 }
-                // The original setTimeout for init in gameLogic.endGame/endDraw will trigger a new game locally.
-                // If P1 doesn't auto-join new game (the second bug report), that's a separate issue regarding
-                // how a new game is initiated and state synced AFTER an ended game.
-                // For now, this ensures the current game end state is reflected.
-                return; 
+                 // Game restart is now handled by restart_request/ack flow initiated from gameLogic.js
+                return;
             }
 
-            // 5. If game is active, determine whose turn it is now for the local player
             const myTurnNow = (state.currentPlayer === state.myEffectiveIcon);
             state.setIsMyTurnInRemote(myTurnNow);
 
@@ -175,35 +179,59 @@ const peerJsCallbacks = {
                 ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}…`);
                 ui.setBoardClickable(false);
             }
-            return; 
+            return;
         }
-        
+
+        // MODIFICATION FOR BUG 1: Synchronised restarts
         if (data.type === 'restart_request') {
-            const requesterName = state.opponentPlayerIcon ? player.getPlayerName(state.opponentPlayerIcon) : "El oponente";
-            ui.showOverlay(`${requesterName} quiere reiniciar. Aceptando automáticamente...`);
+            const requesterName = state.opponentPlayerName || "El oponente";
+            ui.showOverlay(`${requesterName} quiere reiniciar. Aceptando...`);
             if (window.peerJsMultiplayer?.send) {
                 window.peerJsMultiplayer.send({ type: 'restart_ack' });
             }
-            setTimeout(() => { ui.hideOverlay(); gameLogic.init(); }, 2000); 
-        } else if (data.type === 'restart_ack') {
-            ui.showOverlay("Reinicio aceptado. Nueva partida.");
-            setTimeout(() => { ui.hideOverlay(); gameLogic.init(); }, 1500); 
-        } else {
-            console.warn("PeerConnection: Received unhandled data type:", data.type, data);
+            // Receiver of request also inits
+            setTimeout(() => {
+                ui.hideOverlay();
+                gameLogic.init();
+            }, 1500); // UX delay
+            return; // Added return
         }
+
+        if (data.type === 'restart_ack') {
+            // Requester (who sent restart_request) now inits upon receiving ack
+            ui.showOverlay("Reinicio aceptado. Nueva partida...");
+            setTimeout(() => {
+                ui.hideOverlay();
+                gameLogic.init();
+            }, 1500); // UX delay
+            return; // Added return
+        }
+
+        // Fallback for other data types or unexpected data
+        if (state.isMyTurnInRemote && data.type !== 'player_info') {
+             console.warn("PeerConnection: RX data but it's my turn or unhandled type.", {
+                isMyTurnInRemote: state.isMyTurnInRemote, gameActive: state.gameActive,
+                dataType: data.type
+            });
+            // return; // Commented out to allow processing other packet types if needed.
+        }
+
+
+        console.warn("PeerConnection: Received unhandled data type or unexpected data:", data.type, data);
     },
     onConnectionClose: () => {
         console.log("PeerConnection: Connection closed.");
-        if (state.pvpRemoteActive) {
+        if (state.pvpRemoteActive) { // Only show overlay if it was an active P2P game
             ui.showOverlay("El oponente se ha desconectado.");
             ui.updateStatus("Conexión perdida.");
         }
         state.resetRemoteState();
-        gameLogic.updateAllUITogglesHandler();
+        gameLogic.updateAllUITogglesHandler(); // Update UI to reflect disconnected state
+        // Consider calling gameLogic.init() to reset to a local state or show main menu options
     },
     onError: (err) => {
         console.error('PeerConnection: PeerJS Error Object:', err);
-        ui.showOverlay(`Error de conexión: ${err.type || 'desconocido'}`);
+        ui.showOverlay(`Error de conexión: ${err.type || err.message || 'desconocido'}`);
         state.resetRemoteState();
         gameLogic.updateAllUITogglesHandler();
         ui.hideQRCode();
@@ -214,15 +242,15 @@ export function initializePeerAsHost(stopPreviousGameCallback) {
     stopPreviousGameCallback();
     state.setVsCPU(false);
     state.setPvpRemoteActive(true);
-    state.setIAmPlayer1InRemote(true); 
+    state.setIAmPlayer1InRemote(true);
     state.setGamePaired(false);
-    state.setCurrentHostPeerId(null); 
+    state.setCurrentHostPeerId(null);
 
-    gameLogic.updateAllUITogglesHandler(); 
+    gameLogic.updateAllUITogglesHandler();
     ui.updateStatus("Estableciendo conexión como Host...");
 
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.init === 'function') {
-        window.peerJsMultiplayer.init(null, peerJsCallbacks); 
+        window.peerJsMultiplayer.init(null, peerJsCallbacks);
     } else {
         console.error("PeerConnection: peerJsMultiplayer.init not found when trying to host.");
         peerJsCallbacks.onError?.({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado.'});
@@ -233,7 +261,7 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     stopPreviousGameCallback();
     state.setVsCPU(false);
     state.setPvpRemoteActive(true);
-    state.setIAmPlayer1InRemote(false); 
+    state.setIAmPlayer1InRemote(false);
     state.setGamePaired(false);
 
     gameLogic.updateAllUITogglesHandler();
@@ -242,7 +270,7 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     if (!hostIdInput || hostIdInput.trim() === "") {
         ui.showOverlay("ID del Host no ingresado. Operación cancelada.");
         ui.updateStatus("Cancelado. Ingresa un ID para unirte.");
-        state.setPvpRemoteActive(false); 
+        state.setPvpRemoteActive(false);
         gameLogic.updateAllUITogglesHandler();
         return;
     }
@@ -252,7 +280,7 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);
 
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.init === 'function') {
-        window.peerJsMultiplayer.init(null, peerJsCallbacks); 
+        window.peerJsMultiplayer.init(null, peerJsCallbacks);
     } else {
         console.error("PeerConnection: peerJsMultiplayer.init not found when trying to join.");
         peerJsCallbacks.onError?.({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado.'});
@@ -260,16 +288,17 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
 }
 
 export function sendPeerData(data) {
-    if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === 'function') {
+    if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === 'function' && state.gamePaired) { // Ensure game is paired
         console.log(`PeerConnection: TX @ ${new Date().toLocaleTimeString()}:`, JSON.parse(JSON.stringify(data)));
         window.peerJsMultiplayer.send(data);
     } else {
-        console.error("PeerConnection: peerJsMultiplayer.send not available.");
+        console.error("PeerConnection: peerJsMultiplayer.send not available or game not paired.");
     }
 }
 
 export function closePeerSession() {
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.close === 'function') {
-        window.peerJsMultiplayer.close();
+        window.peerJsMultiplayer.close(); // This will trigger onConnectionClose on the other side if connected
     }
+    // Local state reset should happen in onConnectionClose or when explicitly stopping a game.
 }
