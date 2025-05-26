@@ -282,4 +282,16 @@ button.std.disabled{
 input:checked + .slider{ background:#ff0090; }
 input:checked + .slider::before{ transform:translateX(20px); }
 
+/* Easy-mode hint */
+.board-cell.hint::after {
+  content: '⭐';            /* or use a subtle outline/animation if you prefer */
+  font-size: 1.8rem;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+
 /* keep the already-defined .std.disabled look from before */

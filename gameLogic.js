@@ -1,13 +1,13 @@
 // gameLogic.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Core mechanics for both Classic and “3 Piezas” variants of Ta-Te-Ti
+// Core mechanics for both Classic and “3 Piezas” variants of Ta-Te-Ti Deluxe
 // ─────────────────────────────────────────────────────────────────────────────
 
-import * as state  from './state.js';
-import * as ui     from './ui.js';
-import * as player from './player.js';
-import * as sound  from './sound.js';
-import { calculateBestMove } from './cpu.js';
+import * as state   from './state.js';
+import * as ui      from './ui.js';
+import * as player  from './player.js';
+import * as sound   from './sound.js';
+import { calculateBestMove } from './cpu.js';   // ← used for the Easy-mode hint
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 1.  Delegates that game.js can override                  │
@@ -21,13 +21,13 @@ const updateScoreboardHandler = () => _updateScoreboardHandler?.();
 
 let _updateAllUITogglesHandler = () => ui.updateAllUIToggleButtons();
 export const setUpdateAllUITogglesHandler = h => (_updateAllUITogglesHandler = h);
-// Corrected line: Added export
 export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler?.();
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 2.  Utility helpers                                      │
    ╰──────────────────────────────────────────────────────────╯ */
-function showEasyModeHint() {
+export function showEasyModeHint() {
+  // Show a suggested move only in Classic vs-CPU Easy when it’s the human’s turn
   if (
     state.gameVariant === state.GAME_VARIANTS.CLASSIC &&
     state.vsCPU &&
@@ -35,21 +35,25 @@ function showEasyModeHint() {
     state.currentPlayer === state.gameP1Icon &&
     state.gameActive
   ) {
+    // Use hard search so the hint is genuinely good
     const idx = calculateBestMove(
       state.board,
-      state.gameP1Icon,
+      state.gameP1Icon,            // pretend “human” is the AI
       state.gameP2Icon,
-      state.difficulty
+      'hard'
     );
-    if (idx !== null) ui.highlightSuggestedMove(idx);
-  } else ui.clearSuggestedMoveHighlight();
+    if (idx !== -1 && idx != null) ui.highlightSuggestedMove(idx);
+    else                           ui.clearSuggestedMoveHighlight();
+  } else {
+    ui.clearSuggestedMoveHighlight();
+  }
 }
 
 export const checkWin = (sym, board = state.board) => {
   const wins = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], // cols
-    [0, 4, 8], [2, 4, 6]             // diags
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],          // rows
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],          // cols
+    [0, 4, 8], [2, 4, 6]                      // diags
   ];
   return wins.find(combo => combo.every(i => board[i] === sym)) || null;
 };
@@ -80,10 +84,11 @@ export function checkDraw(board = state.board) {
 
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
     if (state.gamePhase === state.GAME_PHASES.MOVING) {
-      return !checkWin(state.currentPlayer, board) &&
+      return !checkWin(state.gameP1Icon, board) &&
+             !checkWin(state.gameP2Icon, board) &&
              !hasValidMoves(state.currentPlayer, board);
     }
-    return false; // cannot draw while still placing pieces
+    return false;
   }
 
   // Classic
@@ -127,7 +132,7 @@ export function switchPlayer() {
     ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
   }
 
-  showEasyModeHint();
+  showEasyModeHint();            // hint for the new player
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
@@ -138,10 +143,8 @@ export function init() {
   ui.clearBoardUI();
   state.resetGameFlowState();
 
-  // Close peer connection if leaving remote mode
   const hostActive = ui.hostGameBtn?.classList.contains('active');
-  const joinActive = ui.joinGameBtn?.classList.contains('active');
-  if (!hostActive && !joinActive) {
+  if (!hostActive) {
     if (state.pvpRemoteActive && window.peerJsMultiplayer?.close)
       window.peerJsMultiplayer.close();
     state.setPvpRemoteActive(false);
@@ -152,12 +155,10 @@ export function init() {
   state.setGameActive(false);
   player.determineEffectiveIcons();
 
-  /* ── reset counters for 3-Piezas ── */
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
-    // state.resetPlayerPiecesOnBoard() called in state.resetGameFlowState() should handle this.
+    /* pieces reset inside resetGameFlowState */
   }
 
-  /* ── MODE A: remote play & paired ── */
   if (state.pvpRemoteActive && state.gamePaired) {
     state.setCurrentPlayer(state.gameP1Icon);
     state.setIsMyTurnInRemote(state.currentPlayer === state.myEffectiveIcon);
@@ -169,39 +170,35 @@ export function init() {
     ui.setBoardClickable(state.isMyTurnInRemote);
     state.setGameActive(true);
   }
-  /* ── MODE B: remote but waiting pair ── */
   else if (state.pvpRemoteActive && !state.gamePaired) {
     ui.setBoardClickable(false);
     state.setGameActive(false);
   }
-  /* ── MODE C: local or vs-CPU ── */
-  else {
+  else {                                   // local PvP or vs-CPU
     state.setGameActive(true);
 
-    // choose starting player
-    let start = state.gameP1Icon;
+    let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
-      start = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
+      startPlayer = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
     } else if (
       state.whoGoesFirstSetting === 'loser' &&
       state.previousGameExists &&
       state.lastWinner !== null
     ) {
-      start = state.lastWinner === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
+      startPlayer = state.lastWinner === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
     }
-    state.setCurrentPlayer(start);
+    state.setCurrentPlayer(startPlayer);
 
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
       state.setGamePhase(state.GAME_PHASES.PLACING);
-      const placed = state.board.filter(s => s === start).length;
+      const placedCount = state.board.filter(s => s === startPlayer).length;
       ui.updateStatus(
-        `${player.getPlayerName(start)}: Coloca tu pieza (${placed + 1}/3).`
+        `${player.getPlayerName(startPlayer)}: Coloca tu pieza (${placedCount + 1}/3).`
       );
     } else {
-      ui.updateStatus(`Turno del ${player.getPlayerName(start)}`);
+      ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    /* CPU auto-move if CPU starts classic */
     if (
       state.vsCPU &&
       state.gameVariant === state.GAME_VARIANTS.CLASSIC &&
@@ -209,15 +206,8 @@ export function init() {
     ) {
       ui.setBoardClickable(false);
       ui.clearSuggestedMoveHighlight();
-      setTimeout(() => {
-        if (state.gameActive) {
-          cpuMoveHandler(); // This will call cpu.cpuMove()
-                            // cpu.cpuMove() calls gameLogic.makeMove() for CPU, then gameLogic.switchPlayer()
-        }
-        // After cpuMoveHandler has completed and player has been switched back to human (gameP1Icon)
-        if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
-          ui.setBoardClickable(true); // Re-enable the board for the human player
-        }
+      setTimeout(async () => {
+        if (state.gameActive) await cpuMoveHandler();
       }, 700 + Math.random() * 300);
     } else {
       ui.setBoardClickable(true);
@@ -228,12 +218,14 @@ export function init() {
   updateAllUITogglesHandler();
   updateScoreboardHandler();
 
-  // reset sound
   if (state.gameActive && !(state.pvpRemoteActive && !state.gamePaired)) {
     if (sound.getAudioContext()?.state === 'running') sound.playSound('reset');
   }
 
-  if (ui.sideMenu?.classList.contains('open')) ui.sideMenu.classList.remove('open');
+  if (ui.sideMenu?.classList.contains('open') &&
+      !(state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote)) {
+    ui.sideMenu.classList.remove('open');
+  }
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
@@ -245,40 +237,37 @@ export function makeMove(idx, sym) {
   ui.clearSuggestedMoveHighlight();
   ui.clearSelectedPieceHighlight();
 
-  // ── GUARD: in 3-Piezas placement, limit to 3 tokens already on the board
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
     state.gamePhase === state.GAME_PHASES.PLACING
   ) {
-    const tokens = state.board.filter(s => s === sym).length;
-    if (tokens >= state.MAX_PIECES_PER_PLAYER) { // Using MAX_PIECES_PER_PLAYER from state.js
+    const tokensOnBoard = state.board.filter(s => s === sym).length;
+    if (tokensOnBoard >= state.MAX_PIECES_PER_PLAYER) {
       ui.updateStatus(
-        `${player.getPlayerName(sym)}: Ya tienes 3 piezas. Entra la fase de movimiento.`
+        `${player.getPlayerName(sym)}: Ya tienes 3 piezas. Fase de movimiento iniciará.`
       );
-      return false;
     }
   }
 
-  // place piece
   const newBoard = [...state.board];
   newBoard[idx] = sym;
   state.setBoard(newBoard);
   ui.updateCellUI(idx, sym);
   sound.playSound('move');
 
-  // win / draw check
   const winCombo = checkWin(sym);
   if (winCombo) {
     endGame(sym, winCombo);
     return true;
   }
 
-  // auto-switch to MOVING when both players have 3 pieces
-  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
-    const p1 = newBoard.filter(s => s === state.gameP1Icon).length;
-    const p2 = newBoard.filter(s => s === state.gameP2Icon).length;
-    if (p1 === state.MAX_PIECES_PER_PLAYER && p2 === state.MAX_PIECES_PER_PLAYER) {
-         state.setGamePhase(state.GAME_PHASES.MOVING);
+  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+      state.gamePhase === state.GAME_PHASES.PLACING) {
+    const p1Pieces = newBoard.filter(s => s === state.gameP1Icon).length;
+    const p2Pieces = newBoard.filter(s => s === state.gameP2Icon).length;
+    if (p1Pieces === state.MAX_PIECES_PER_PLAYER &&
+        p2Pieces === state.MAX_PIECES_PER_PLAYER) {
+      state.setGamePhase(state.GAME_PHASES.MOVING);
     }
   } else if (checkDraw(newBoard)) {
     endDraw();
@@ -286,10 +275,8 @@ export function makeMove(idx, sym) {
   }
 
   switchPlayer();
-  updateAllUITogglesHandler(); // keeps CPU button disabled when 3-Piezas is on
+  updateAllUITogglesHandler();
 
-
-  // CPU response (Classic only)
   if (
     state.vsCPU &&
     state.gameVariant === state.GAME_VARIANTS.CLASSIC &&
@@ -297,10 +284,8 @@ export function makeMove(idx, sym) {
     state.gameActive
   ) {
     ui.setBoardClickable(false);
-    setTimeout(() => {
-      if (state.gameActive) cpuMoveHandler();
-      if (state.gameActive && state.currentPlayer === state.gameP1Icon)
-        ui.setBoardClickable(true);
+    setTimeout(async () => {
+      if (state.gameActive) await cpuMoveHandler();
     }, 700 + Math.random() * 300);
   }
 
@@ -315,8 +300,7 @@ export function movePiece(fromIdx, toIdx, sym) {
     !state.gameActive ||
     state.gameVariant !== state.GAME_VARIANTS.THREE_PIECE ||
     state.gamePhase !== state.GAME_PHASES.MOVING
-  )
-    return false;
+  ) return false;
 
   if (state.board[fromIdx] !== sym || state.board[toIdx] !== null) return false;
   if (!areCellsAdjacent(fromIdx, toIdx)) {
@@ -327,7 +311,7 @@ export function movePiece(fromIdx, toIdx, sym) {
   }
 
   const newBoard = [...state.board];
-  newBoard[toIdx] = sym;
+  newBoard[toIdx]   = sym;
   newBoard[fromIdx] = null;
   state.setBoard(newBoard);
   ui.updateCellUI(toIdx, sym);
@@ -342,9 +326,9 @@ export function movePiece(fromIdx, toIdx, sym) {
     return true;
   }
 
-  const nextSym = sym === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
-  if (!hasValidMoves(nextSym, newBoard)) { // If opponent has no moves after this move
-    endDraw(); // Then it's a draw
+  const nextPlayer = sym === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
+  if (!hasValidMoves(nextPlayer, newBoard)) {
+    endDraw();
     return true;
   }
 
@@ -369,16 +353,15 @@ export function endGame(winnerSym, winningCells) {
   state.setLastWinner(winnerSym);
   state.setPreviousGameExists(true);
 
-  // stats
   if (state.pvpRemoteActive || state.vsCPU) {
-    if (winnerSym === state.myEffectiveIcon) state.incrementMyWins();
+    if (winnerSym === state.myEffectiveIcon)        state.incrementMyWins();
     else if (winnerSym === state.opponentEffectiveIcon) state.incrementOpponentWins();
   } else {
     if (winnerSym === state.gameP1Icon) state.incrementMyWins();
-    else state.incrementOpponentWins();
+    else                                 state.incrementOpponentWins();
   }
-  localStorage.setItem('myWinsTateti', state.myWins.toString());
-  localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
+  localStorage.setItem('myWinsTateti',      state.myWins.toString());
+  localStorage.setItem('opponentWinsTateti',state.opponentWins.toString());
   updateScoreboardHandler();
 
   setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
