@@ -7,64 +7,63 @@ import * as state   from './state.js';
 import * as ui      from './ui.js';
 import * as player  from './player.js';
 import * as sound   from './sound.js';
-import { calculateBestMove, cpuMove, cpuMoveThreePiece, calculateBestSlideForHint } from './cpu.js'; // Ensure cpuMoveThreePiece & calculateBestSlideForHint is imported
+import { calculateBestMove,
+         cpuMove,
+         cpuMoveThreePiece,
+         calculateBestSlideForHint } from './cpu.js';
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 1.  Delegates that game.js can override                  │
+   │ 1. Delegates that game.js can override                  │
    ╰──────────────────────────────────────────────────────────╯ */
 let cpuMoveHandler = () => console.warn('cpuMoveHandler not set');
 export const setCpuMoveHandler = h => (cpuMoveHandler = h);
 
-
 let _updateScoreboardHandler = () => ui.updateScoreboard();
 export const setUpdateScoreboardHandler = h => (_updateScoreboardHandler = h);
-const updateScoreboardHandler = () => _updateScoreboardHandler?.();
+const updateScoreboardHandler = () => _updateScoreboardHandler();
 
 let _updateAllUITogglesHandler = () => ui.updateAllUIToggleButtons();
 export const setUpdateAllUITogglesHandler = h => (_updateAllUITogglesHandler = h);
-export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler?.();
+export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler();
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 2.  Utility helpers                                      │
+   │ 2. Utility helpers                                      │
    ╰──────────────────────────────────────────────────────────╯ */
 export function showEasyModeHint() {
-  ui.clearSuggestedMoveHighlight(); // Clear previous hint first
+  ui.clearSuggestedMoveHighlight();
 
   if (
     state.vsCPU &&
     state.difficulty === 'easy' &&
-    state.currentPlayer === state.gameP1Icon && // Human player's turn
+    state.currentPlayer === state.gameP1Icon &&
     state.gameActive
   ) {
     const humanIcon = state.gameP1Icon;
-    const cpuIcon = state.gameP2Icon;
+    const cpuIcon   = state.gameP2Icon;
 
     if (state.gameVariant === state.GAME_VARIANTS.CLASSIC) {
-      const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint'); // Use 'hint' to signify we want a 'hard' calculation
-      if (idx !== -1 && idx != null && state.board[idx] === null) {
+      const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint');
+      if (idx != null && idx !== -1 && state.board[idx] === null) {
         ui.highlightSuggestedMove(idx);
       }
     } else if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
       if (state.gamePhase === state.GAME_PHASES.PLACING) {
         const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint');
-        if (idx !== -1 && idx != null && state.board[idx] === null) {
+        if (idx != null && idx !== -1 && state.board[idx] === null) {
           ui.highlightSuggestedMove(idx);
         }
       } else if (state.gamePhase === state.GAME_PHASES.MOVING) {
         const bestSlide = calculateBestSlideForHint(state.board, humanIcon, cpuIcon);
         if (bestSlide) {
           if (state.selectedPieceIndex === null) {
-            // No piece selected, highlight the 'from' piece
             if (state.board[bestSlide.from] === humanIcon) {
-                 ui.highlightSuggestedMove(bestSlide.from);
+              ui.highlightSuggestedMove(bestSlide.from);
             }
           } else if (state.selectedPieceIndex === bestSlide.from) {
-            // Correct piece selected, highlight the 'to' destination
-             if (state.board[bestSlide.to] === null) {
-                ui.highlightSuggestedMove(bestSlide.to);
+            if (state.board[bestSlide.to] === null) {
+              ui.highlightSuggestedMove(bestSlide.to);
             }
           }
-          // If a different piece is selected than `bestSlide.from`, no "to" hint is shown for that selection.
         }
       }
     }
@@ -73,49 +72,50 @@ export function showEasyModeHint() {
 
 export const checkWin = (sym, board = state.board) => {
   const wins = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],          // rows
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],          // cols
-    [0, 4, 8], [2, 4, 6]                      // diags
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
   ];
   return wins.find(combo => combo.every(i => board[i] === sym)) || null;
 };
 
-export const areCellsAdjacent = (a, b) => { // Exported for use in cpu.js
-  const r1 = ~~(a / 3), c1 = a % 3,
-        r2 = ~~(b / 3), c2 = b % 3;
+export const areCellsAdjacent = (a, b) => {
+  const r1 = Math.floor(a / 3), c1 = a % 3;
+  const r2 = Math.floor(b / 3), c2 = b % 3;
   const dr = Math.abs(r1 - r2), dc = Math.abs(c1 - c2);
-  return dr <= 1 && dc <= 1 && dr + dc > 0;
+  return dr <= 1 && dc <= 1 && (dr + dc > 0);
 };
 
-export function hasValidMoves(sym, board) { // Exported for use in cpu.js
+export function hasValidMoves(sym, board) {
   for (let i = 0; i < board.length; i++) {
     if (board[i] !== sym) continue;
     for (let j = 0; j < board.length; j++) {
       if (i === j) continue;
-      if (board[j] === null && areCellsAdjacent(i, j)) return true;
+      if (board[j] === null && areCellsAdjacent(i, j)) {
+        return true;
+      }
     }
   }
   return false;
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 3.  Draw detection                                       │
+   │ 3. Draw detection                                       │
    ╰──────────────────────────────────────────────────────────╯ */
 export function checkDraw(board = state.board) {
   if (!state.gameActive) return false;
 
-  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
-    if (state.gamePhase === state.GAME_PHASES.MOVING) {
-      const p1CanMove = hasValidMoves(state.gameP1Icon, board);
-      const p2CanMove = hasValidMoves(state.gameP2Icon, board);
-      return !checkWin(state.gameP1Icon, board) &&
-             !checkWin(state.gameP2Icon, board) &&
-             !p1CanMove && !p2CanMove;
-    }
-    return false;
+  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+      state.gamePhase === state.GAME_PHASES.MOVING) {
+    const p1CanMove = hasValidMoves(state.gameP1Icon, board);
+    const p2CanMove = hasValidMoves(state.gameP2Icon, board);
+    return (
+      !checkWin(state.gameP1Icon, board) &&
+      !checkWin(state.gameP2Icon, board) &&
+      !p1CanMove && !p2CanMove
+    );
   }
 
-  // Classic
   return (
     board.every(c => c !== null) &&
     !checkWin(state.gameP1Icon, board) &&
@@ -124,53 +124,51 @@ export function checkDraw(board = state.board) {
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 4.  Turn switch & status prompts                         │
+   │ 4. Turn switch & status prompts                         │
    ╰──────────────────────────────────────────────────────────╯ */
 export function switchPlayer() {
   state.setCurrentPlayer(
     state.currentPlayer === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon
   );
   state.setSelectedPieceIndex(null);
-  ui.clearSelectedPieceHighlight(); // Always clear piece selection highlight on turn switch
+  ui.clearSelectedPieceHighlight();
 
-  if (
-    state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
-    state.gamePhase === state.GAME_PHASES.MOVING
-  ) {
+  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+      state.gamePhase === state.GAME_PHASES.MOVING) {
     ui.updateStatus(
       `${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`
     );
-    if (checkDraw(state.board)) {
-      endDraw();
-      return;
-    }
-  } else if (
-    state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
-    state.gamePhase === state.GAME_PHASES.PLACING
-  ) {
+    if (checkDraw(state.board)) { endDraw(); return; }
+  } else if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+             state.gamePhase === state.GAME_PHASES.PLACING) {
     const placed = state.board.filter(s => s === state.currentPlayer).length;
     ui.updateStatus(
       `${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${placed + 1}/3).`
     );
-  } else { // Classic Ta-Te-Ti
+  } else {
     ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
   }
 
-  showEasyModeHint(); // Show hint for the new player if applicable
+  showEasyModeHint();
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 5.  Game initialisation / reset                          │
+   │ 5. Game initialisation / reset                          │
    ╰──────────────────────────────────────────────────────────╯ */
 export function init() {
-  ui.removeConfetti(); ui.hideOverlay(); ui.hideQRCode();
-  ui.clearBoardUI(); // This also clears suggested move highlights
+  ui.removeConfetti();
+  ui.hideOverlay();
+  ui.hideQRCode();
+  ui.clearBoardUI();
   state.resetGameFlowState();
 
+  // ▶ REMOTE-TEARDOWN SAFEGUARD
   const hostActive = ui.hostGameBtn?.classList.contains('active');
-  if (!hostActive) {
-    if (state.pvpRemoteActive && window.peerJsMultiplayer?.close)
+  const joinActive = ui.joinGameBtn?.classList.contains('active');
+  if (state.pvpRemoteActive && !state.gamePaired && !hostActive && !joinActive) {
+    if (window.peerJsMultiplayer?.close) {
       window.peerJsMultiplayer.close();
+    }
     state.setPvpRemoteActive(false);
     state.setGamePaired(false);
   }
@@ -179,10 +177,14 @@ export function init() {
   state.setGameActive(false);
   player.determineEffectiveIcons();
 
-
+  // ─────────────────────────────────────────────────────────
+  //   REMOTE MODE HANDLING
+  // ─────────────────────────────────────────────────────────
   if (state.pvpRemoteActive && state.gamePaired) {
     state.setCurrentPlayer(state.gameP1Icon);
-    state.setIsMyTurnInRemote(state.currentPlayer === state.myEffectiveIcon);
+    state.setIsMyTurnInRemote(
+      state.currentPlayer === state.myEffectiveIcon
+    );
     ui.updateStatus(
       state.isMyTurnInRemote
         ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}`
@@ -190,12 +192,13 @@ export function init() {
     );
     ui.setBoardClickable(state.isMyTurnInRemote);
     state.setGameActive(true);
-  }
-  else if (state.pvpRemoteActive && !state.gamePaired) {
+  } else if (state.pvpRemoteActive && !state.gamePaired) {
     ui.setBoardClickable(false);
     state.setGameActive(false);
-  }
-  else {
+  } else {
+    // ─────────────────────────────────────────────────────────
+    //   LOCAL / CPU MODE HANDLING
+    // ─────────────────────────────────────────────────────────
     state.setGameActive(true);
     let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
@@ -205,13 +208,18 @@ export function init() {
       state.previousGameExists &&
       state.lastWinner !== null
     ) {
-      startPlayer = state.lastWinner === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
+      startPlayer =
+        state.lastWinner === state.gameP1Icon
+          ? state.gameP2Icon
+          : state.gameP1Icon;
     }
     state.setCurrentPlayer(startPlayer);
 
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
       state.setGamePhase(state.GAME_PHASES.PLACING);
-      const placedCount = state.board.filter(s => s === startPlayer).length;
+      const placedCount = state.board.filter(
+        s => s === startPlayer
+      ).length;
       ui.updateStatus(
         `${player.getPlayerName(startPlayer)}: Coloca tu pieza (${placedCount + 1}/3).`
       );
@@ -219,68 +227,70 @@ export function init() {
       ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) { // CPU starts
+    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) {
       ui.setBoardClickable(false);
-      // ui.clearSuggestedMoveHighlight(); // Already cleared by clearBoardUI
       setTimeout(async () => {
         if (state.gameActive) await cpuMoveHandler();
       }, 700 + Math.random() * 300);
-    } else { // Human starts
+    } else {
       ui.setBoardClickable(true);
-      showEasyModeHint(); // Show hint if human starts and conditions met
+      showEasyModeHint();
     }
   }
 
   updateAllUITogglesHandler();
   updateScoreboardHandler();
 
-  if (state.gameActive && !(state.pvpRemoteActive && !state.gamePaired)) {
-    if (sound.getAudioContext()?.state === 'running') sound.playSound('reset');
+  if (
+    state.gameActive &&
+    !(state.pvpRemoteActive && !state.gamePaired)
+  ) {
+    if (sound.getAudioContext()?.state === 'running') {
+      sound.playSound('reset');
+    }
   }
 
-  if (ui.sideMenu?.classList.contains('open') &&
-      !(state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote)) {
+  if (
+    ui.sideMenu?.classList.contains('open') &&
+    !(state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote)
+  ) {
     ui.sideMenu.classList.remove('open');
   }
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 6.  Placement phase (Classic + 3-Piezas PLACING)         │
+   │ 6. Placement phase (Classic + 3-Piezas PLACING)         │
    ╰──────────────────────────────────────────────────────────╯ */
 export function makeMove(idx, sym) {
-  if (state.board[idx] !== null || !state.gameActive) return false;
-
-  // ui.clearSuggestedMoveHighlight(); // Done by showEasyModeHint or cell click logic in eventListeners
-  // ui.clearSelectedPieceHighlight(); // Not relevant for placement phase directly
-
+  if (state.board[idx] != null || !state.gameActive) return false;
+  // Placement logic
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
     state.gamePhase === state.GAME_PHASES.PLACING
   ) {
     const tokensOnBoard = state.board.filter(s => s === sym).length;
-    if (tokensOnBoard >= state.MAX_PIECES_PER_PLAYER) {
-      return false;
-    }
+    if (tokensOnBoard >= state.MAX_PIECES_PER_PLAYER) return false;
   }
 
   const newBoard = [...state.board];
   newBoard[idx] = sym;
   state.setBoard(newBoard);
-  ui.updateCellUI(idx, sym); // This also clears hints from the cell itself
+  ui.updateCellUI(idx, sym);
   sound.playSound('move');
 
   const winCombo = checkWin(sym, newBoard);
-  if (winCombo) {
-    endGame(sym, winCombo);
-    return true;
-  }
+  if (winCombo) { endGame(sym, winCombo); return true; }
 
-  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
-      state.gamePhase === state.GAME_PHASES.PLACING) {
-    const p1Pieces = newBoard.filter(s => s === state.gameP1Icon).length;
-    const p2Pieces = newBoard.filter(s => s === state.gameP2Icon).length;
-    if (p1Pieces === state.MAX_PIECES_PER_PLAYER &&
-        p2Pieces === state.MAX_PIECES_PER_PLAYER) {
+  if (
+    state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
+    state.gamePhase === state.GAME_PHASES.PLACING
+  ) {
+    const p1Count = newBoard.filter(s => s === state.gameP1Icon).length;
+    const p2Count = newBoard.filter(s => s === state.gameP2Icon).length;
+    if (
+      p1Count === state.MAX_PIECES_PER_PLAYER &&
+      p2Count === state.MAX_PIECES_PER_PLAYER
+    ) {
       state.setGamePhase(state.GAME_PHASES.MOVING);
     }
   } else if (checkDraw(newBoard)) {
@@ -293,19 +303,17 @@ export function makeMove(idx, sym) {
 
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
-    setTimeout(async () => {
-      if (state.gameActive) await cpuMoveHandler();
-    }, 700 + Math.random() * 300);
+    setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
   } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
     ui.setBoardClickable(true);
-    showEasyModeHint(); // Hint for human's turn
+    showEasyModeHint();
   }
 
   return true;
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 7.  Moving phase (3-Piezas MOVING)                       │
+   │ 7. Moving phase (3-Piezas MOVING)                       │
    ╰──────────────────────────────────────────────────────────╯ */
 export function movePiece(fromIdx, toIdx, sym) {
   if (
@@ -314,14 +322,12 @@ export function movePiece(fromIdx, toIdx, sym) {
     state.gamePhase !== state.GAME_PHASES.MOVING
   ) return false;
 
-  if (state.board[fromIdx] !== sym || state.board[toIdx] !== null) {
-      return false;
-  }
+  if (state.board[fromIdx] !== sym || state.board[toIdx] !== null) return false;
   if (!areCellsAdjacent(fromIdx, toIdx)) {
-    ui.updateStatus(`${player.getPlayerName(sym)}: Inválido. Mueve a casilla adyacente.`);
+    ui.updateStatus(`${player.getPlayerName(sym)}: Inválido. Mueve adyacente.`);
     state.setSelectedPieceIndex(null);
     ui.clearSelectedPieceHighlight();
-    showEasyModeHint(); // Re-evaluate hint, maybe suggest selecting a piece
+    showEasyModeHint();
     return false;
   }
 
@@ -333,37 +339,28 @@ export function movePiece(fromIdx, toIdx, sym) {
   ui.updateCellUI(fromIdx, null);
   sound.playSound('move');
   state.setSelectedPieceIndex(null);
-  ui.clearSelectedPieceHighlight(); // Clear after successful move
+  ui.clearSelectedPieceHighlight();
 
   const winCombo = checkWin(sym, newBoard);
-  if (winCombo) {
-    endGame(sym, winCombo);
-    return true;
-  }
-
-  if (checkDraw(newBoard)) {
-      endDraw();
-      return true;
-  }
+  if (winCombo) { endGame(sym, winCombo); return true; }
+  if (checkDraw(newBoard)) { endDraw(); return true; }
 
   switchPlayer();
   updateAllUITogglesHandler();
 
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
-    setTimeout(async () => {
-      if (state.gameActive) await cpuMoveHandler();
-    }, 700 + Math.random() * 300);
+    setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
   } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
     ui.setBoardClickable(true);
-    showEasyModeHint(); // Hint for human's turn
+    showEasyModeHint();
   }
 
   return true;
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
-   │ 8.  Game-over helpers                                    │
+   │ 8. Game-over helpers                                    │
    ╰──────────────────────────────────────────────────────────╯ */
 export function endGame(winnerSym, winningCells) {
   state.setGameActive(false);
@@ -380,14 +377,15 @@ export function endGame(winnerSym, winningCells) {
   state.setPreviousGameExists(true);
 
   if (state.pvpRemoteActive || state.vsCPU) {
-    if (winnerSym === state.myEffectiveIcon)        state.incrementMyWins();
-    else if (winnerSym === state.opponentEffectiveIcon) state.incrementOpponentWins();
+    if (winnerSym === state.myEffectiveIcon) state.incrementMyWins();
+    else state.incrementOpponentWins();
   } else {
     if (winnerSym === state.gameP1Icon) state.incrementMyWins();
-    else                                 state.incrementOpponentWins();
+    else state.incrementOpponentWins();
   }
-  localStorage.setItem('myWinsTateti',      state.myWins.toString());
-  localStorage.setItem('opponentWinsTateti',state.opponentWins.toString());
+
+  localStorage.setItem('myWinsTateti', state.myWins.toString());
+  localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
   updateScoreboardHandler();
 
   setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
