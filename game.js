@@ -4,7 +4,7 @@ import * as state from './state.js';
 import * as player from './player.js';
 import * as sound from './sound.js';
 import * as gameLogic from './gameLogic.js';
-import { cpuMove } from './cpu.js';
+import { cpuMakeMove } from './cpu.js'; // Corrected: Was cpuMove
 import * as peerConnection from './peerConnection.js';
 import * as theme from './theme.js';
 import { setupEventListeners } from './eventListeners.js';
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
     theme.initializeTheme(); // This will call ui.updateThemeToggleButton internally
     ui.updateSoundToggleButton(state.soundEnabled); // Ensure sound button reflects loaded state
 
-    gameLogic.setCpuMoveHandler(cpuMove);
+    gameLogic.setCpuMoveHandler(cpuMakeMove); // Corrected: Was cpuMove
     gameLogic.setUpdateScoreboardHandler(ui.updateScoreboard);
     gameLogic.setUpdateAllUITogglesHandler(ui.updateAllUIToggleButtons);
 
