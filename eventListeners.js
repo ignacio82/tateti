@@ -125,7 +125,6 @@ function handleCellClick(e) {
     }
 }
 
-// ... rest of the file remains the same ...
 function changeSymbolsBtnHandler() {
     const newIndex = (state.currentSymbolIndex + 1) % state.symbolSet.length;
     state.setCurrentSymbolIndex(newIndex);
@@ -133,4 +132,107 @@ function changeSymbolsBtnHandler() {
     player.determineEffectiveIcons();
     sound.playSound('move');
     if (!state.gameActive && !state.pvpRemoteActive) { 
+        gameLogic.init(); 
+    } else if (!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
+        ui.updateScoreboard(); 
+    } else if (state.gameActive) {
+        ui.updateScoreboard(); 
+    }
+}
+
+export function setupEventListeners(stopCb) {
+    mainStopAnyGameInProgressAndResetUICallback = stopCb;
+
+    /* ----------  GLOBAL / MENU HANDLERS  ---------- */
+    ui.menuToggle?.addEventListener('click', ui.toggleMenu);
+    document.addEventListener('click', e => ui.closeMenuIfNeeded(e.target));
+
+    /* ----------  BOARD CELLS  ---------- */
+    ui.cells.forEach(cell => {
+        cell.addEventListener('click', handleCellClick);
+        cell.setAttribute('tabindex', '0');
+        cell.addEventListener('keydown', e => {
+            if (['Enter', ' '].includes(e.key)) {
+                e.preventDefault();
+                cell.click();
+            }
+        });
+    });
+
+    /* ----------  RESTART  ---------- */
+    ui.restartIcon?.addEventListener('click', () => {
+        if (state.pvpRemoteActive && state.gamePaired) {
+            peerConnection.sendPeerData({ type: 'restart_request' });
+            ui.showOverlay(state.gameActive ? 'Solicitud de reinicio enviada...' : 'Proponiendo nueva partida...');
+        } else {
+            mainStopAnyGameInProgressAndResetUICallback?.();
+            gameLogic.init();
+        }
+        ui.sideMenu?.classList.remove('open');
+    });
+
+    /* ----------  MODE BUTTONS  ---------- */
+    ui.pvpLocalBtn?.addEventListener('click', () => {
+        mainStopAnyGameInProgressAndResetUICallback?.();
+        state.setVsCPU(false);
+        state.setPvpRemoteActive(false); 
+        state.setGamePaired(false);     
         gameLogic.init();
+    });
+
+    ui.threePieceToggle?.addEventListener('change', e => {
+        const useThreePiece = e.target.checked;
+        mainStopAnyGameInProgressAndResetUICallback?.();
+        state.setGameVariant(
+            useThreePiece ? state.GAME_VARIANTS.THREE_PIECE
+                          : state.GAME_VARIANTS.CLASSIC
+        );
+        localStorage.setItem('tatetiGameVariant', state.gameVariant);
+        gameLogic.init();
+    });
+
+    ui.hostGameBtn?.addEventListener('click', () => {
+        peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
+    });
+
+    ui.cpuBtn?.addEventListener('click', () => {
+        mainStopAnyGameInProgressAndResetUICallback?.();
+        state.setVsCPU(true);
+        state.setPvpRemoteActive(false); 
+        state.setGamePaired(false);     
+        gameLogic.init();
+    });
+
+    /* ----------  DIFFICULTY & START OPTIONS  ---------- */
+    [ui.easyBtn, ui.mediumBtn, ui.hardBtn].forEach(btn => {
+        btn?.addEventListener('click', e => {
+            state.setDifficulty(e.target.id.replace('Btn', ''));
+            sound.playSound('move');
+            if (state.vsCPU && (!state.gameActive || state.board.every(c => c === null))) {
+                gameLogic.init();
+            } else if (state.vsCPU) {
+                ui.updateAllUIToggleButtons();
+            }
+        });
+    });
+
+    [ui.player1StartsBtn, ui.randomStartsBtn, ui.loserStartsBtn].forEach(btn => {
+        btn?.addEventListener('click', e => {
+            state.setWhoGoesFirstSetting(e.target.id.replace('StartsBtn', ''));
+            localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting);
+            sound.playSound('move');
+            if ((!state.gameActive || state.board.every(c => c === null)) && !(state.pvpRemoteActive && state.gamePaired)) {
+                gameLogic.init();
+            } else {
+                ui.updateAllUIToggleButtons();
+            }
+        });
+    });
+
+    /* ----------  THEME, SOUND, SYMBOLS  ---------- */
+    ui.themeToggle?.addEventListener('click', theme.toggleTheme);
+    document.getElementById('soundToggle')?.addEventListener('click', sound.toggleSound);
+    ui.changeSymbolsBtn?.addEventListener('click', changeSymbolsBtnHandler);
+
+    document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+}
