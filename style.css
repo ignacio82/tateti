@@ -70,6 +70,21 @@ h1{margin:.1em 0 .4em;font-size:clamp(2.2rem,4vw+0.5rem,3.5rem);text-shadow:2px 
 .icon-btn{background:none;border:none;cursor:pointer;font-size:2rem;padding:4px;line-height:1;color:var(--pink-dark);transition:transform .15s;}
 .icon-btn:hover{transform:scale(1.1);}
 
+/* Specific styles for the new restart icon image */
+#restart-icon {
+    background-image: url('icons/restart_icon.png'); /* Adjust path if needed */
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain; /* Adjust to 'cover' or specific pixels if needed */
+    width: 30px;  /* Adjust to match your new icon's desired display size */
+    height: 30px; /* Adjust to match your new icon's desired display size */
+    font-size: 0; /* Hide any text fallback or residual spacing */
+    /* Override or reset padding if it interferes with icon display */
+    padding: 0; /* Reset padding from .icon-btn if necessary */
+    /* Ensure background color from .icon-btn (if any) doesn't interfere, it's 'none' */
+}
+
+
 /* ------------  SIDE-MENU  ------------ */
 #menu-toggle{font-size:2.2rem;}
 .side-menu{position:fixed;top:0;left:0;height:100vh;width:clamp(250px,70vw,300px);background:var(--pink-light);box-shadow:3px 0 8px rgba(0,0,0,.15);transform:translateX(-100%);transition:transform .3s ease;padding:70px 14px 20px;display:flex;flex-direction:column;gap:18px;z-index:150;overflow-y:auto;}
@@ -81,7 +96,7 @@ button.std{padding:8px 20px;font-size:1rem;background:var(--pink);color:#fff;bor
 button.std:hover{filter:brightness(.9);}
 button.std.active{outline:3px solid var(--pink-dark);filter:brightness(.88);box-shadow:0 0 5px var(--pink-dark);}
 
-#restartBtn{display:none;}
+#restartBtn{display:none;} /* This is likely an old, unused button */
 
 /* Confetti  */
 .confetti{position:fixed;border-radius:4px;pointer-events:none;z-index:3000;}
@@ -105,7 +120,7 @@ body.dark-theme .cell.selected-piece-to-move { /* Dark theme for selected piece 
 body.dark-theme #results{background:#3d3d3d;border-color:var(--pink-dark);color:#fff;}
 body.dark-theme .side-menu{background:#3d3d3d;}
 body.dark-theme .side-menu .controls-group>div>span{color:var(--pink-light);}
-body.dark-theme .icon-btn{color:var(--pink-light);}
+body.dark-theme .icon-btn{color:var(--pink-light);} /* This will still apply to #menu-toggle */
 
 /* ------------ QR MODAL ------------ */
 #qr-display-area.modal {
@@ -207,8 +222,11 @@ body.dark-theme .copy-id-btn.copied {
     h1{font-size:clamp(2rem,7vw,2.7rem);}
     #results{font-size:clamp(.9rem,3vw,1rem);}
     .side-menu{padding-top:60px;}
-    .icon-btn{font-size:1.8rem;}
-    #menu-toggle{font-size:2rem;}
+    .icon-btn{font-size:1.8rem;} /* This will affect #menu-toggle and #restart-icon (if it were text) */
+    #menu-toggle{font-size:2rem;} /* Specific override for menu-toggle */
+    /* Adjust #restart-icon size for mobile if needed, e.g.: */
+    /* #restart-icon { width: 24px; height: 24px; } */
+
 
     .qr-modal-content {
         max-width: 90vw;
@@ -238,6 +256,11 @@ button.std.disabled{
     gap:.75rem;
     margin-top:1rem;
 }
+
+#threePieceWrapper {
+    flex-basis: 100%; /* Ensures it takes full width in its flex container */
+}
+
 .toggle-title{ font-weight:600; }
 
 .switch{
@@ -260,4 +283,3 @@ input:checked + .slider{ background:#ff0090; }
 input:checked + .slider::before{ transform:translateX(20px); }
 
 /* keep the already-defined .std.disabled look from before */
-
