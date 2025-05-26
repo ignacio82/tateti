@@ -5,7 +5,7 @@
     --pink-dark:  #ff1493;
     --pink-extra: #ffe4e1;
     --radius: 12px;
-    /* --suggestion-glow: #00ff00; /* This variable is no longer needed */
+    --selection-color: #9d00ff; /* A distinct purple/violet for selected piece */
 }
 *{box-sizing:border-box;}
 body{
@@ -27,15 +27,26 @@ h1{margin:.1em 0 .4em;font-size:clamp(2.2rem,4vw+0.5rem,3.5rem);text-shadow:2px 
     box-shadow:0 6px 18px rgba(0,0,0,.25);user-select:none;
     transition:border-color .3s,box-shadow .3s;
 }
-.cell{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:clamp(2rem,6vw,4rem);background:var(--pink-extra);border:2px solid #ffb6c1;border-radius:var(--radius);cursor:pointer;transition:background .15s ease, border-color .3s ease, box-shadow .3s ease;position:relative;overflow:hidden;}
+.cell{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:clamp(2rem,6vw,4rem);background:var(--pink-extra);border:2px solid #ffb6c1;border-radius:var(--radius);cursor:pointer;transition: background .15s ease, border-color .3s ease, box-shadow .3s ease, opacity .3s ease;position:relative;overflow:hidden;}
 .cell:hover:not(.disabled){background:var(--pink-light);}
 .cell.disabled{cursor:default;opacity:.7;}
 
-/* .cell.rainbow is used for winning cells AND now for suggested moves */
 .cell.rainbow::after{content:"";position:absolute;inset:0;background:linear-gradient(45deg,red,orange,yellow,green,blue,indigo,violet,red);background-size:400% 400%;animation:rb 2s linear infinite;opacity:.7;z-index:0;}
 .cell span{position:relative;z-index:1;}
 
-/* Removed .cell.suggested-move styles as we are using .cell.rainbow for hints */
+/* Style for selected piece to move */
+.cell.selected-piece-to-move {
+    border-color: var(--selection-color);
+    box-shadow: 0 0 10px var(--selection-color), inset 0 0 8px rgba(157, 0, 255, 0.3);
+    opacity: 1; /* Ensure it's fully opaque when selected */
+    cursor: grabbing; /* Indicate it can be "moved" */
+}
+/* Slightly different hover for a selected piece to indicate it's active */
+.cell.selected-piece-to-move:hover {
+    background: var(--pink-extra); /* Keep background, or slightly different if needed */
+    filter: brightness(1.05);
+}
+
 
 @keyframes rb{0%{background-position:0 50%}100%{background-position:100% 50%}}
 @keyframes cellSelectAnim{0%{transform:scale(.9)}100%{transform:scale(1)}}
@@ -86,7 +97,11 @@ button.std.active{outline:3px solid var(--pink-dark);filter:brightness(.88);box-
 body.dark-theme{background:#2b2b2b;color:#ffc0cb;}
 body.dark-theme #game{background:#3d3d3d;border-color:var(--pink-dark);}
 body.dark-theme .cell{background:#4a4a4a;border-color:#5a5a5a;color:#fff;}
-/* body.dark-theme .cell.suggested-move - removed as we use .rainbow */
+body.dark-theme .cell.selected-piece-to-move { /* Dark theme for selected piece */
+    border-color: var(--selection-color);
+    box-shadow: 0 0 10px var(--selection-color), inset 0 0 8px rgba(157, 0, 255, 0.5); /* Brighter inset for dark */
+    background-color: #3a2d4a; /* Darker purple-ish background */
+}
 body.dark-theme #results{background:#3d3d3d;border-color:var(--pink-dark);color:#fff;}
 body.dark-theme .side-menu{background:#3d3d3d;}
 body.dark-theme .side-menu .controls-group>div>span{color:var(--pink-light);}
@@ -145,7 +160,6 @@ body.dark-theme .icon-btn{color:var(--pink-light);}
     margin: 10px auto 15px auto;
 }
 
-/* Styles for the new Copy Host ID button */
 .copy-id-btn {
     display: block;
     width: 100%;
@@ -180,9 +194,7 @@ body.dark-theme #qr-display-area.modal .qr-modal-close-btn:focus {
     color: #ffc0cb;
 }
 
-/* Dark theme for copy button */
 body.dark-theme .copy-id-btn {
-    /* .std dark theme styles should apply if it has .std */
 }
 body.dark-theme .copy-id-btn.copied {
     background-color: #66bb6a;

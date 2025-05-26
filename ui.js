@@ -6,6 +6,7 @@ import * as player from './player.js'; // For getPlayerName and determineEffecti
 export const cells = document.querySelectorAll('.cell');
 export const statusDiv = document.getElementById('status');
 export const pvpLocalBtn = document.getElementById('pvpLocalBtn');
+export const threePieceBtn = document.getElementById('threePieceBtn');
 export const hostGameBtn = document.getElementById('hostGameBtn');
 export const joinGameBtn = document.getElementById('joinGameBtn');
 export const cpuBtn = document.getElementById('cpuBtn');
@@ -43,6 +44,7 @@ export function showOverlay(text) {
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = overlayId;
+        // ... (styles as before) ...
         overlay.style.position = 'fixed';
         overlay.style.top = '0';
         overlay.style.left = '0';
@@ -103,6 +105,7 @@ export function launchConfetti() {
     if (!container) {
         container = document.createElement('div');
         container.id = confettiContainerId;
+        // ... (styles as before) ...
         container.style.position = 'fixed';
         container.style.top = '0';
         container.style.left = '0';
@@ -121,13 +124,14 @@ export function launchConfetti() {
     for (let i = 0; i < confettiCount; i++) {
         const confetti = document.createElement('div');
         confetti.classList.add('confetti');
+        // ... (styles as before) ...
         confetti.style.left = Math.random() * 100 + 'vw';
         confetti.style.top = Math.random() * -100 + 'vh';
         confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
         confetti.style.width = (Math.random() * 10 + 5) + 'px';
         confetti.style.height = (Math.random() * 20 + 10) + 'px';
         confetti.style.opacity = Math.random() * 0.5 + 0.5;
-
+        
         const duration = (Math.random() * 2 + 2.5).toFixed(2);
         const delay = (Math.random() * 1).toFixed(2);
 
@@ -137,9 +141,7 @@ export function launchConfetti() {
         confetti.style.animationTimingFunction = 'linear';
         confetti.style.animationIterationCount = '1';
         confetti.style.animationFillMode = 'forwards';
-
         container.appendChild(confetti);
-
         setTimeout(() => {
             confetti.remove();
         }, (parseFloat(duration) + parseFloat(delay) + 0.5) * 1000);
@@ -159,16 +161,15 @@ export function updateStatus(message) {
 
 export function highlightWinner(winningCells) {
     winningCells.forEach(index => {
-        cells[index]?.classList.add('rainbow'); // Uses existing .rainbow class
+        cells[index]?.classList.add('rainbow');
     });
-    // No need to remove here if it's for winner, or clearBoardUI will handle it
 }
 
 export function clearBoardUI() {
     cells.forEach(cell => {
         const span = cell.querySelector('span');
         if (span) span.textContent = '';
-        cell.classList.remove('rainbow', 'disabled'); // Remove rainbow from all cells
+        cell.classList.remove('rainbow', 'disabled', 'selected-piece-to-move'); // Add selected-piece-to-move
         cell.style.cursor = 'pointer';
     });
     removeConfetti();
@@ -178,41 +179,61 @@ export function updateCellUI(index, symbol) {
     if (cells[index]) {
         const span = cells[index].querySelector('span');
         if (span) {
-            span.textContent = symbol;
+            span.textContent = symbol || ''; // Ensure empty string if symbol is null/undefined
         } else {
-            cells[index].textContent = symbol;
+            cells[index].textContent = symbol || '';
         }
-        cells[index].style.cursor = 'default';
-        cells[index].classList.add('disabled');
-        cells[index].classList.remove('rainbow'); // If player clicks a suggested cell, remove hint
+        // If a symbol is placed, it's not just selected for moving, it's taken.
+        // If symbol is null (clearing a cell), it should become clickable if game allows.
+        if (symbol) {
+            cells[index].style.cursor = 'default';
+            cells[index].classList.add('disabled');
+        } else {
+            cells[index].style.cursor = 'pointer';
+            cells[index].classList.remove('disabled');
+        }
+        cells[index].classList.remove('rainbow'); 
+        cells[index].classList.remove('selected-piece-to-move'); // Remove selection highlight
 
-        cells[index].style.animation = 'cellSelectAnim 0.2s ease-out';
-        setTimeout(() => {
-            if (cells[index]) cells[index].style.animation = '';
-        }, 200);
+        if (symbol) { // Only animate if placing a new symbol
+            cells[index].style.animation = 'cellSelectAnim 0.2s ease-out';
+            setTimeout(() => {
+                if (cells[index]) cells[index].style.animation = '';
+            }, 200);
+        }
     }
 }
 
 // --- Functions for Suggested Move Hint ---
 export function highlightSuggestedMove(index) {
-    clearSuggestedMoveHighlight(); // Clear any previous suggestion
-    if (cells[index] && cells[index].querySelector('span')?.textContent === '') { // Only highlight empty cells
-        cells[index].classList.add('rainbow'); // Use the existing .rainbow class for the hint
+    clearSuggestedMoveHighlight();
+    if (cells[index] && cells[index].querySelector('span')?.textContent === '') {
+        cells[index].classList.add('rainbow');
     }
 }
 
 export function clearSuggestedMoveHighlight() {
     cells.forEach(cell => {
-        // Only remove 'rainbow' if it was purely for suggestion.
-        // Winning cells might also have 'rainbow'.
-        // However, gameLogic will call clearBoardUI on new game or clearSuggestedMoveHighlight on player move.
-        // For simplicity now, just remove 'rainbow'. If winner highlight needs to persist longer
-        // independently of suggestion, this needs refinement or a different class for suggestions.
-        // For now, this will work as the hint is transient.
         cell.classList.remove('rainbow');
     });
 }
 // --- End Functions for Suggested Move Hint ---
+
+// --- Functions for Highlighting Selected Piece in Three Piece Mode ---
+export function highlightSelectedPiece(index) {
+    clearSelectedPieceHighlight(); // Clear any previously selected piece
+    if (cells[index]) {
+        cells[index].classList.add('selected-piece-to-move');
+    }
+}
+
+export function clearSelectedPieceHighlight() {
+    cells.forEach(cell => {
+        cell.classList.remove('selected-piece-to-move');
+    });
+}
+// --- End Functions for Highlighting Selected Piece ---
+
 
 export function displayQRCode(gameLink) {
     if (qrDisplayArea && qrCodeCanvas && window.QRious) {
@@ -273,7 +294,7 @@ export function updateSoundToggleButton(soundEnabled) {
 }
 
 // ---------- NEWLY MOVED UI UPDATE FUNCTIONS ----------
-
+// ... (updateScoreboard and updateAllUIToggleButtons remain the same as last version) ...
 export function updateScoreboard() {
     if (!state.myEffectiveIcon || (!state.opponentEffectiveIcon && (state.vsCPU || state.pvpRemoteActive))) {
          player.determineEffectiveIcons();
@@ -284,7 +305,7 @@ export function updateScoreboard() {
 
     if (state.pvpRemoteActive || state.vsCPU) {
         opponentDisplayName = player.getPlayerName(state.opponentEffectiveIcon);
-    } else {
+    } else { // Local PvP (Classic or ThreePiece)
         myDisplayName = player.getPlayerName(state.gameP1Icon);
         opponentDisplayName = player.getPlayerName(state.gameP2Icon);
     }
@@ -295,35 +316,51 @@ export function updateScoreboard() {
 }
 
 export function updateAllUIToggleButtons() {
-    [pvpLocalBtn, hostGameBtn, joinGameBtn, cpuBtn].forEach(btn => btn?.classList.remove('active'));
+    // Game Mode Buttons
+    [pvpLocalBtn, threePieceBtn, hostGameBtn, joinGameBtn, cpuBtn].forEach(btn => btn?.classList.remove('active'));
+    
     if (state.pvpRemoteActive) {
         if (state.iAmPlayer1InRemote && hostGameBtn) hostGameBtn.classList.add('active');
         else if (!state.iAmPlayer1InRemote && joinGameBtn) joinGameBtn.classList.add('active');
-    } else if (state.vsCPU && cpuBtn) {
-        cpuBtn.classList.add('active');
-    } else if (pvpLocalBtn) {
-        pvpLocalBtn.classList.add('active');
+    } else if (state.vsCPU) {
+        if (cpuBtn) cpuBtn.classList.add('active');
+    } else if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+        if (threePieceBtn) threePieceBtn.classList.add('active');
+    } else { 
+        if (pvpLocalBtn) pvpLocalBtn.classList.add('active');
     }
 
-    if (difficultyDiv) difficultyDiv.style.display = state.vsCPU ? 'flex' : 'none';
-    [easyBtn, mediumBtn, hardBtn].forEach(btn => btn?.classList.remove('active'));
-    if (state.vsCPU) {
+    const showDifficulty = state.vsCPU && state.gameVariant === state.GAME_VARIANTS.CLASSIC;
+    if (difficultyDiv) difficultyDiv.style.display = showDifficulty ? 'flex' : 'none';
+    
+    if (showDifficulty) {
+        [easyBtn, mediumBtn, hardBtn].forEach(btn => btn?.classList.remove('active'));
         if (state.difficulty === 'easy' && easyBtn) easyBtn.classList.add('active');
         else if (state.difficulty === 'hard' && hardBtn) hardBtn.classList.add('active');
-        else if (mediumBtn) mediumBtn.classList.add('active');
+        else if (mediumBtn) mediumBtn.classList.add('active'); 
     }
 
-    [player1StartsBtn, randomStartsBtn, loserStartsBtn].forEach(btn => btn?.classList.remove('active'));
-    const startSettingMap = { 'player1': player1StartsBtn, 'random': randomStartsBtn, 'loser': loserStartsBtn };
-    if (startSettingMap[state.whoGoesFirstSetting]) {
-        startSettingMap[state.whoGoesFirstSetting].classList.add('active');
-    } else if (player1StartsBtn) {
-        player1StartsBtn.classList.add('active');
-    }
+    const showStartOptions = !state.pvpRemoteActive; 
+    const gameStartOptionsEl = document.querySelector('.game-start-options'); 
+    const gameStartOptionsTitle = gameStartOptionsEl?.previousElementSibling; 
 
+    if (gameStartOptionsEl) gameStartOptionsEl.style.display = showStartOptions ? 'flex' : 'none';
+    if (gameStartOptionsTitle) gameStartOptionsTitle.style.display = showStartOptions ? 'block' : 'none';
+
+    if (showStartOptions) {
+        [player1StartsBtn, randomStartsBtn, loserStartsBtn].forEach(btn => btn?.classList.remove('active'));
+        const startSettingMap = { 'player1': player1StartsBtn, 'random': randomStartsBtn, 'loser': loserStartsBtn };
+        if (startSettingMap[state.whoGoesFirstSetting]) {
+            startSettingMap[state.whoGoesFirstSetting].classList.add('active');
+        } else if (player1StartsBtn) { 
+            player1StartsBtn.classList.add('active');
+        }
+    }
+    
     updateThemeToggleButton(document.body.classList.contains('dark-theme'));
     updateSoundToggleButton(state.soundEnabled);
 }
+
 
 // --- Event Listeners for UI elements defined in this module ---
 if (qrModalCloseBtn) {
