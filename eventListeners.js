@@ -57,7 +57,7 @@ function handleCellClick(e) {
                 if (gameLogic.movePiece(fromIndex, toIndex, playerMakingTheMove)) {
                     // Move succeeded. gameLogic.movePiece has updated:
                     // - state.board
-                    // - state.currentPlayer (to the next player via switchPlayer)
+                    // - state.currentPlayer (now the *next* player via switchPlayer)
                     // - state.gamePhase (remains MOVING unless game ends)
                     // - state.gameActive (to false if game ended)
 
@@ -67,11 +67,11 @@ function handleCellClick(e) {
                             from: fromIndex,
                             to: toIndex,
                             gamePhaseAfterMove: state.gamePhase, 
-                            playerWhoMadeTheMoveIcon: playerMakingTheMove // Send who made the move
-                            // state.currentPlayer is now the *next* player due to switchPlayer in movePiece
+                            playerWhoMadeTheMoveIcon: playerMakingTheMove, // Icon of the player who just moved
+                            nextPlayerIconAfterMove: state.currentPlayer    // Icon of the player whose turn is NEXT (after switchPlayer)
                         };
 
-                        const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board);
+                        const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board); // Check win for playerMakingTheMove
                         if (winDetails) {
                             moveData.winner = playerMakingTheMove;
                             moveData.winningCells = winDetails;
@@ -135,11 +135,11 @@ function handleCellClick(e) {
                 type: 'move',
                 index: cellIndex,
                 gamePhaseAfterMove: state.gamePhase,
-                playerWhoMadeTheMoveIcon: playerMakingTheMove // Send who made the move
-                // state.currentPlayer is now the *next* player due to switchPlayer in makeMove
+                playerWhoMadeTheMoveIcon: playerMakingTheMove, // Icon of the player who just moved
+                nextPlayerIconAfterMove: state.currentPlayer    // Icon of the player whose turn is NEXT (after switchPlayer)
             }; 
 
-            const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board);
+            const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board); // Check win for playerMakingTheMove
             if (winDetails) {
                 moveData.winner = playerMakingTheMove;
                 moveData.winningCells = winDetails;
