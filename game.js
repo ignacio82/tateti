@@ -14,9 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
     state.setMyPlayerName(localStorage.getItem('tatetiPlayerName') || 'Jugador');
     state.setMyPlayerIcon(localStorage.getItem('tatetiPlayerIcon') || null);
     state.setCurrentSymbolIndex(+(localStorage.getItem('currentSymbolIndex') || 0));
-    state.myWins = +localStorage.getItem('myWinsTateti') || 0;
-    state.opponentWins = +localStorage.getItem('opponentWinsTateti') || 0;
-    state.draws = +localStorage.getItem('drawsTateti') || 0;
+    
+    // Use setter functions for scores
+    state.setMyWins(+localStorage.getItem('myWinsTateti') || 0);
+    state.setOpponentWins(+localStorage.getItem('opponentWinsTateti') || 0);
+    state.setDraws(+localStorage.getItem('drawsTateti') || 0);
+    
     state.setWhoGoesFirstSetting(localStorage.getItem('whoGoesFirstSetting') || 'player1');
     const initialSoundDisabled = localStorage.getItem('soundDisabled') === 'true';
     state.setSoundEnabled(!initialSoundDisabled);
@@ -28,9 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial UI state update based on loaded settings
     ui.updateSoundToggleButton(state.soundEnabled); // Ensure button reflects loaded state
     // ui.updateThemeToggleButton is handled by theme.initializeTheme()
-
-    // --- UI Update Callbacks are MOVED to ui.js ---
-    // No longer defined here: updateScoreboardUI_callback, updateAllUIToggleButtons_callback
 
     // Set handlers/callbacks in modules that need them, now passing functions from ui.js
     gameLogic.setCpuMoveHandler(cpuMove);
@@ -79,7 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ----------  PWA bootstrap  ---------- */
-// ... (same as before)
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     if (location.protocol === 'http:' || location.protocol === 'https:') {

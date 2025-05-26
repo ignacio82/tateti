@@ -1,4 +1,5 @@
 // peerjs-multiplayer.js
+console.log("DEBUG: peerjs-multiplayer.js script execution started."); // <-- NEW DEBUG LOG AT THE VERY TOP
 
 let peer = null; // PeerJS object
 let currentConnection = null; // PeerJS DataConnection object
@@ -41,6 +42,13 @@ function initPeerSession(preferredId = null, callbacks = {}) {
     onNewConnectionCallback = callbacks.onNewConnection || onNewConnectionCallback;
 
     try {
+        // Ensure PeerJS library is loaded
+        if (typeof Peer === 'undefined') {
+            console.error("PeerJS: Peer library (Peer constructor) is not loaded!");
+            if (onErrorCallback) onErrorCallback({type: 'init_failed', message: 'PeerJS library not loaded.', originalError: new Error('Peer is not defined')});
+            return;
+        }
+
         if (preferredId) {
             peer = new Peer(preferredId); // Attempt to use a preferred ID
         } else {
@@ -64,40 +72,41 @@ function initPeerSession(preferredId = null, callbacks = {}) {
     // Host: Listen for incoming connections
     peer.on('connection', (conn) => {
         console.log('PeerJS: Incoming connection from', conn.peer);
-        if (currentConnection) {
+        if (currentConnection && currentConnection.open) { 
             console.warn(`PeerJS: Already connected to ${currentConnection.peer}. Rejecting new connection from ${conn.peer}.`);
-            conn.close(); // Or handle multiple connections if your game supports it
+            // Ensure conn is open before trying to close, though it might not be necessary
+            // if we are just rejecting it.
+            if (conn.open) {
+                conn.close();
+            } else {
+                // If not open, PeerJS might handle its cleanup if 'open' is never fired.
+                // Or listen for its 'open' to close, or 'error'.
+                conn.on('open', () => conn.close()); // Close it if it ever opens
+            }
             return;
         }
         currentConnection = conn;
         if (onNewConnectionCallback) {
-            onNewConnectionCallback(conn); // Let game.js know, it might show "Player X wants to connect"
+            onNewConnectionCallback(conn); 
         }
         setupConnectionEventHandlers(currentConnection);
     });
 
     peer.on('disconnected', () => {
         console.log('PeerJS: Disconnected from PeerServer. Attempting to reconnect...');
-        // PeerJS will attempt to reconnect automatically.
-        // You might want to inform the user.
         if (onErrorCallback) onErrorCallback({type: 'disconnected', message: 'Disconnected from PeerServer.'});
-        // Do not call closePeerSession() here as it will destroy the peer object preventing reconnection.
     });
 
     peer.on('close', () => {
-        // This is called when the peer is destroyed (e.g., by peer.destroy())
         console.log('PeerJS: Peer object closed (destroyed).');
         localPeerId = null;
-        // onConnectionCloseCallback might be more relevant for data connection closures.
     });
 
     peer.on('error', (err) => {
         console.error('PeerJS: Error:', err);
         if (onErrorCallback) {
-            onErrorCallback(err); // Pass the full error object
+            onErrorCallback(err); 
         }
-        // Common error types: 'network', 'peer-unavailable', 'server-error', 'socket-error', 'webrtc'
-        // If 'peer-unavailable', it means the ID you tried to connect to doesn't exist or is not connected to the PeerServer.
     });
 }
 
@@ -114,7 +123,6 @@ function setupConnectionEventHandlers(conn) {
     });
 
     conn.on('data', (data) => {
-        console.log(`PeerJS: Data received from ${conn.peer}:`, data);
         if (onDataReceivedCallback) {
             onDataReceivedCallback(data);
         }
@@ -126,7 +134,7 @@ function setupConnectionEventHandlers(conn) {
             onConnectionCloseCallback();
         }
         if (currentConnection && currentConnection.peer === conn.peer) {
-            currentConnection = null; // Clear current connection
+            currentConnection = null; 
         }
     });
 
@@ -143,23 +151,26 @@ function setupConnectionEventHandlers(conn) {
  * @param {string} hostPeerId - The ID of the host peer to connect to.
  */
 function connectToPeer(hostPeerId) {
-    if (!peer) {
-        console.error("PeerJS: Peer object not initialized. Call initPeerSession first.");
-        if (onErrorCallback) onErrorCallback({type: 'not_initialized', message: 'PeerJS not initialized.'});
+    if (!peer || peer.destroyed) { 
+        console.error("PeerJS: Peer object not initialized or destroyed. Call initPeerSession first.");
+        if (onErrorCallback) onErrorCallback({type: 'not_initialized', message: 'PeerJS not initialized or destroyed.'});
         return;
     }
-    if (currentConnection) {
-        console.warn(`PeerJS: Already attempting or connected. Current connection with ${currentConnection.peer}. Please close it first if you want to connect to another peer.`);
+    if (currentConnection && currentConnection.open) {
+        console.warn(`PeerJS: Already connected to ${currentConnection.peer}. Please close it first if you want to connect to another peer.`);
+        return;
+    }
+    if (currentConnection) { 
+        console.warn(`PeerJS: Already attempting to connect to ${currentConnection.peer || 'a peer'}. Please wait or close the current attempt.`);
         return;
     }
 
     console.log(`PeerJS: Attempting to connect to host with ID: ${hostPeerId}`);
     try {
         currentConnection = peer.connect(hostPeerId, {
-            reliable: true // Use reliable data channel (SCTP)
+            reliable: true 
         });
         if (!currentConnection) {
-            // This should ideally not happen if peer.connect itself doesn't throw
             console.error("PeerJS: peer.connect() returned null or undefined.");
             if (onErrorCallback) onErrorCallback({type: 'connect_failed', message: 'peer.connect() failed to return a connection object.', peerId: hostPeerId });
             return;
@@ -179,7 +190,6 @@ function sendData(data) {
     if (currentConnection && currentConnection.open) {
         try {
             currentConnection.send(data);
-            // console.log("PeerJS: Data sent:", data); // Can be too verbose
         } catch (error) {
             console.error("PeerJS: Error sending data:", error);
             if (onErrorCallback) onErrorCallback({type: 'send_error', message: 'Failed to send data.', originalError: error});
@@ -199,8 +209,12 @@ function closePeerSession() {
     console.log("PeerJS: Closing peer session...");
     if (currentConnection) {
         try {
-            currentConnection.close();
-            console.log("PeerJS: Current data connection closed.");
+            if (currentConnection.open) { 
+                currentConnection.close();
+                console.log("PeerJS: Current data connection closed.");
+            } else {
+                console.log("PeerJS: Current data connection was not open, no need to close explicitly here.");
+            }
         } catch (e) {
             console.warn("PeerJS: Error closing data connection", e);
         }
@@ -209,8 +223,10 @@ function closePeerSession() {
     if (peer) {
         try {
             if (!peer.destroyed) {
-                peer.destroy(); // Destroys the peer, releasing its ID and closing connections.
+                peer.destroy(); 
                 console.log("PeerJS: Peer object destroyed.");
+            } else {
+                console.log("PeerJS: Peer object was already destroyed.");
             }
         } catch (e) {
             console.warn("PeerJS: Error destroying peer object", e);
@@ -218,7 +234,6 @@ function closePeerSession() {
         peer = null;
     }
     localPeerId = null;
-    // Callbacks for closure are typically handled by the event listeners ('close' on connection or peer)
 }
 
 /**
@@ -239,4 +254,5 @@ window.peerJsMultiplayer = {
     getLocalId: getLocalPeerId
 };
 
-console.log("PeerJS multiplayer script loaded.");
+console.log("Assigned window.peerJsMultiplayer:", typeof window.peerJsMultiplayer, window.peerJsMultiplayer);
+console.log("PeerJS multiplayer script loaded."); // This log was present in older logs
