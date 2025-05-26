@@ -198,14 +198,15 @@ export function updateAllUIToggleButtons(){
 
   if(state.pvpRemoteActive){
     if(state.iAmPlayer1InRemote) hostGameBtn?.classList.add('active');
+    // Joiner doesn't get an active button, implied by remote state
   }else if(state.vsCPU){
     cpuBtn?.classList.add('active');
-  }else{
+  }else{ // Default to Local PvP if not remote or vs CPU
     pvpLocalBtn?.classList.add('active');
   }
 
-  /* CPU difficulty visible only in Classic vs-CPU */
-  const showDiff = state.vsCPU && state.gameVariant===state.GAME_VARIANTS.CLASSIC;
+  /* CPU difficulty visible only if vsCPU is active */
+  const showDiff = state.vsCPU; // MODIFIED: No longer depends on gameVariant
   difficultyDiv.style.display = showDiff ? 'flex' : 'none';
 
   if(showDiff){
@@ -224,11 +225,11 @@ export function updateAllUIToggleButtons(){
     ({player1:player1StartsBtn, random:randomStartsBtn, loser:loserStartsBtn}[state.whoGoesFirstSetting] ?? player1StartsBtn)?.classList.add('active');
   }
 
-  /* Disable CPU button in 3-Piece mode */
-  const cpuDisabled = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE;
+  // CPU button is no longer disabled based on game variant
+  // const cpuDisabled = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE; // REMOVED
   if(cpuBtn){
-    cpuBtn.disabled = cpuDisabled;
-    cpuBtn.classList.toggle('disabled', cpuDisabled);
+    cpuBtn.disabled = false; // MODIFIED: Ensure CPU button is not disabled by default here
+    cpuBtn.classList.remove('disabled'); // MODIFIED: Ensure 'disabled' class is removed
   }
 
   /* sync the 3-piece toggle */
