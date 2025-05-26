@@ -1,11 +1,11 @@
 // peerConnection.js
 import * as state from './state.js';
-import * as ui from './ui.js';
+import * as ui from './ui.js'; // Import ui directly
 import * as player from './player.js';
 import * as gameLogic from './gameLogic.js';
 import * as sound from './sound.js';
 
-// ... (peerJsCallbacks definition remains the same) ...
+// ... (peerJsCallbacks definition remains the same until onDataReceived) ...
 const peerJsCallbacks = {
     onPeerOpen: (id) => { 
         if (state.pvpRemoteActive && state.iAmPlayer1InRemote) { 
@@ -14,8 +14,7 @@ const peerJsCallbacks = {
             const gameLink = `${desiredBaseUrl}/?room=${id}`;
 
             ui.updateStatus(`Comparte el enlace o ID: ${id}`);
-            // ui.showOverlay(`Tu ID de Host: ${id}. Esperando conexión...`); // This will be handled by modal
-            ui.displayQRCode(gameLink); // Show QR modal
+            ui.displayQRCode(gameLink); 
         } else if (state.pvpRemoteActive && !state.iAmPlayer1InRemote) { 
             if (state.currentHostPeerId && window.peerJsMultiplayer?.connect) {
                 console.log(`PeerJS: Joiner's peer ID is ${id}. Attempting to connect to host: ${state.currentHostPeerId}`);
@@ -30,7 +29,7 @@ const peerJsCallbacks = {
     },
     onNewConnection: (conn) => { 
         console.log('PeerConnection: Incoming connection from', conn.peer);
-        ui.hideQRCode(); // Hide QR modal once connection is incoming
+        ui.hideQRCode(); 
         ui.showOverlay("Jugador 2 conectándose...");
         ui.updateStatus("Jugador 2 está conectándose...");
     },
@@ -38,7 +37,7 @@ const peerJsCallbacks = {
         console.log("PeerConnection: Data connection opened with peer.");
         state.setGamePaired(true);
         ui.hideOverlay();
-        ui.hideQRCode(); // Ensure QR modal is hidden
+        ui.hideQRCode(); 
 
         player.determineEffectiveIcons(); 
         if (window.peerJsMultiplayer?.send) {
@@ -59,7 +58,7 @@ const peerJsCallbacks = {
             state.setOpponentPlayerIcon(data.icon); 
             console.log("PeerConnection: Opponent info updated:", state.opponentPlayerName, state.opponentPlayerIcon);
             player.determineEffectiveIcons(); 
-            gameLogic.updateScoreboardHandler(); 
+            ui.updateScoreboard(); // MODIFIED: Call ui.updateScoreboard directly
 
             if (state.gameActive) {
                 ui.updateStatus(state.isMyTurnInRemote ?
@@ -67,6 +66,9 @@ const peerJsCallbacks = {
                     `Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
             }
             if(!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
+                // It's possible init was already called by onConnectionOpen,
+                // but if player_info arrives and game hasn't started, ensure it does.
+                // This might also re-trigger init if it was already called, which should be safe.
                 gameLogic.init(); 
             }
             return;
@@ -109,11 +111,11 @@ const peerJsCallbacks = {
         gameLogic.updateAllUITogglesHandler(); 
     },
     onError: (err) => { 
-        console.error('PeerConnection: PeerJS Error Object:', err); // Log the full error object
+        console.error('PeerConnection: PeerJS Error Object:', err); 
         ui.showOverlay(`Error de conexión: ${err.type || 'desconocido'}`);
         state.resetRemoteState();
         gameLogic.updateAllUITogglesHandler();
-        ui.hideQRCode(); // Hide QR if it was open
+        ui.hideQRCode(); 
     }
 };
 
@@ -128,20 +130,16 @@ export function initializePeerAsHost(stopPreviousGameCallback) {
 
     gameLogic.updateAllUITogglesHandler(); 
     ui.updateStatus("Estableciendo conexión como Host...");
-    // ui.showOverlay("Configurando partida remota como Host..."); // Overlay might be too intrusive if QR modal shows quickly
 
-    // ADD THIS FOR DEBUGGING:
     console.log("Attempting to initialize Peer as Host. window.peerJsMultiplayer is:", typeof window.peerJsMultiplayer, window.peerJsMultiplayer);
 
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.init === 'function') {
         window.peerJsMultiplayer.init(null, peerJsCallbacks);
     } else {
         console.error("PeerConnection: peerJsMultiplayer.init not found or not a function when trying to host.");
-        // Ensure peerJsCallbacks.onError is callable even if peerJsMultiplayer is missing
         if(peerJsCallbacks && typeof peerJsCallbacks.onError === 'function') {
             peerJsCallbacks.onError({type: 'init_failed', message: 'Módulo multijugador (PeerJS) no encontrado.'});
         } else {
-            // Fallback UI update if callbacks themselves are broken
             ui.showOverlay("Error crítico: Módulo multijugador no cargado.");
         }
     }
@@ -169,7 +167,6 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     ui.showOverlay(`Conectando al Host ID: ${state.currentHostPeerId}...`);
     ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);
 
-    // ADD THIS FOR DEBUGGING:
     console.log("Attempting to initialize Peer as Joiner. window.peerJsMultiplayer is:", typeof window.peerJsMultiplayer, window.peerJsMultiplayer);
 
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.init === 'function') {
@@ -184,7 +181,6 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     }
 }
 
-// ... (handleRemoteMove, sendPeerData, closePeerSession functions remain the same) ...
 function handleRemoteMove(index) { 
     ui.hideOverlay(); 
 
@@ -193,13 +189,39 @@ function handleRemoteMove(index) {
         return;
     }
     
-    // Opponent's effective icon should be current player when it's their turn
     const remotePlayerSymbol = state.opponentEffectiveIcon; 
 
-    if (!gameLogic.makeMove(index, remotePlayerSymbol)) {
-        console.warn("PeerConnection: Invalid remote move attempted on board.", {index});
-        return;
+    // Determine which move function to call based on game variant and phase
+    if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+        // For Three-Piece, remote moves will always be placements initially,
+        // then actual moves. The data structure for 'move' would need to differentiate.
+        // Assuming 'data.index' is for placement for now.
+        // If it's a slide, data would need { from, to }
+        // This part needs careful review based on how slide moves are sent.
+        // For now, assuming data.index implies a placement.
+        if (state.gamePhase === state.GAME_PHASES.PLACING) {
+            if (!gameLogic.makeMove(index, remotePlayerSymbol)) {
+                console.warn("PeerConnection: Invalid remote placement move attempted in 3-Piece.", {index});
+                return;
+            }
+        } else if (state.gamePhase === state.GAME_PHASES.MOVING) {
+            // This needs `data` to include `from` and `to` for a slide.
+            // The current `data.index` is not enough for a slide.
+            // This logic will fail if a slide is received with only `data.index`.
+            // Let's assume for now the 'move' type with only 'index' is for Classic or 3-Piece placement.
+            // A different data.type like 'slide_move' would be needed.
+            console.warn("PeerConnection: Received 'move' type data for 3-Piece MOVING phase. Requires {from, to}. Index only is ambiguous here.");
+            // Placeholder: if data.from and data.to were present:
+            // if (!gameLogic.movePiece(data.from, data.to, remotePlayerSymbol)) { ... }
+            return; // Cannot process ambiguous move
+        }
+    } else { // Classic Ta-Te-Ti
+        if (!gameLogic.makeMove(index, remotePlayerSymbol)) {
+            console.warn("PeerConnection: Invalid remote move attempted on board (Classic).", {index});
+            return;
+        }
     }
+
 
     const winDetails = gameLogic.checkWin(remotePlayerSymbol);
     if (winDetails) {
@@ -215,12 +237,10 @@ function handleRemoteMove(index) {
     state.setIsMyTurnInRemote(true);
     ui.updateStatus(`Tu Turno ${player.getPlayerName(state.currentPlayer)}`);
     ui.setBoardClickable(true);
+    gameLogic.showEasyModeHint(); // Show hint if applicable
 }
 
 export function sendPeerData(data) {
-    // ADD THIS FOR DEBUGGING:
-    // console.log("Attempting to send peer data. window.peerJsMultiplayer is:", typeof window.peerJsMultiplayer, window.peerJsMultiplayer);
-
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === 'function') {
         window.peerJsMultiplayer.send(data);
     } else {
@@ -229,12 +249,7 @@ export function sendPeerData(data) {
 }
 
 export function closePeerSession() {
-    // ADD THIS FOR DEBUGGING:
-    // console.log("Attempting to close peer session. window.peerJsMultiplayer is:", typeof window.peerJsMultiplayer, window.peerJsMultiplayer);
-    
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.close === 'function') {
         window.peerJsMultiplayer.close();
     }
-    // resetRemoteState is usually handled by onConnectionClose callback, 
-    // but if closing proactively, might be needed here or ensure callback fires.
 }
