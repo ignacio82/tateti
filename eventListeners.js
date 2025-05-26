@@ -99,33 +99,30 @@ function handleCellClick(e) {
     }
 
     if (localMoveProcessed && state.pvpRemoteActive && state.gamePaired) {
-        // **MODIFICATION START**
-        // Remove: const currentPhaseAfterMove = state.gamePhase;
-        
-        // Add a small delay to ensure all state updates are complete before sending
         setTimeout(() => {
-            // Capture all state fresh inside the timeout
+            // DEBUGGING LOG: Check state.gamePhase just before packaging
+            console.log(`eventListeners.js: INSIDE setTimeout. Current state.gamePhase before packaging: ${state.gamePhase}. TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
+            
             const fullStateData = {
                 type: 'full_state_update',
-                board: [...state.board],                 // Read fresh state
-                currentPlayer: state.currentPlayer,       // Read fresh state
-                gamePhase: state.gamePhase,             // Read fresh state HERE
-                gameActive: state.gameActive,             // Read fresh state
-                winner: state.gameActive ? null : state.lastWinner, // Read fresh state
-                draw: state.gameActive ? false : (!state.lastWinner && !state.gameActive && state.board.every(c=>c!==null)), // Read fresh state
-                selectedPieceIndex: state.selectedPieceIndex // Read fresh state
+                board: [...state.board],
+                currentPlayer: state.currentPlayer,
+                gamePhase: state.gamePhase, // This is the value we are debugging
+                gameActive: state.gameActive,
+                turnCounter: state.turnCounter, // <-- NEW: Add current turn counter
+                winner: state.gameActive ? null : state.lastWinner,
+                draw: state.gameActive ? false : (!state.lastWinner && !state.gameActive && state.board.every(c=>c!==null)),
+                selectedPieceIndex: state.selectedPieceIndex
             };
             
-            console.log('Sending full_state_update:', fullStateData);
+            console.log('Sending full_state_update:', fullStateData); // Your existing log
             peerConnection.sendPeerData(fullStateData);
-        }, 50); // Slightly increased delay for better state consistency (or keep at 50 if that worked)
-        // **MODIFICATION END**
+        }, 50);
 
-        // This part for updating the local player's (sender's) UI:
-        if (state.gameActive) { // This gameActive is the sender's local state
-            state.setIsMyTurnInRemote(false); // Sender is no longer the active turn player
-            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`); // currentPlayer is now the other player
-            ui.setBoardClickable(false); // Sender's board is not clickable
+        if (state.gameActive) {
+            state.setIsMyTurnInRemote(false);
+            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
+            ui.setBoardClickable(false);
         }
     }
 }
@@ -136,16 +133,14 @@ function changeSymbolsBtnHandler() {
     localStorage.setItem('currentSymbolIndex', state.currentSymbolIndex.toString());
     player.determineEffectiveIcons();
     sound.playSound('move');
-    if (!state.gameActive && !state.pvpRemoteActive) { 
-        gameLogic.init(); 
+    if (!state.gameActive && !state.pvpRemoteActive) {
+        gameLogic.init();
     } else if (!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
-        // Only update scoreboard if paired, otherwise init will handle it
-        ui.updateScoreboard(); 
+        ui.updateScoreboard();
     } else if (state.gameActive) {
-        // If game is active, just update icons/scoreboard, don't re-init
-        ui.updateScoreboard(); 
+        ui.updateScoreboard();
     }
-    // ui.updateAllUIToggleButtons(); // Might be good to call this too
+    // ui.updateAllUIToggleButtons(); // Consider if this is needed here
 }
 
 export function setupEventListeners(stopCb) {
@@ -171,45 +166,43 @@ export function setupEventListeners(stopCb) {
     ui.restartIcon?.addEventListener('click', () => {
         if (state.pvpRemoteActive && state.gamePaired) {
             peerConnection.sendPeerData({ type: 'restart_request' });
-            // Show a more neutral message, actual restart happens on ack
             ui.showOverlay(state.gameActive ? 'Solicitud de reinicio enviada...' : 'Proponiendo nueva partida...');
         } else {
-            mainStopAnyGameInProgressAndResetUICallback?.(); // Stop any local/cpu game
-            gameLogic.init(); // Re-initialize for local/cpu
+            mainStopAnyGameInProgressAndResetUICallback?.();
+            gameLogic.init();
         }
-        ui.sideMenu?.classList.remove('open'); // Close menu on action
+        ui.sideMenu?.classList.remove('open');
     });
 
     /* ----------  MODE BUTTONS  ---------- */
     ui.pvpLocalBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(false);
-        state.setPvpRemoteActive(false); 
-        state.setGamePaired(false);     // Ensure paired is false
+        state.setPvpRemoteActive(false);
+        state.setGamePaired(false);
         gameLogic.init();
     });
 
     ui.threePieceToggle?.addEventListener('change', e => {
         const useThreePiece = e.target.checked;
-        mainStopAnyGameInProgressAndResetUICallback?.(); // Stop current game before switching variant
+        mainStopAnyGameInProgressAndResetUICallback?.();
         state.setGameVariant(
             useThreePiece ? state.GAME_VARIANTS.THREE_PIECE
                           : state.GAME_VARIANTS.CLASSIC
         );
         localStorage.setItem('tatetiGameVariant', state.gameVariant);
-        gameLogic.init(); // Initialize with new variant
+        gameLogic.init();
     });
 
     ui.hostGameBtn?.addEventListener('click', () => {
-        // Callback will handle stopping previous game.
         peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
     });
 
     ui.cpuBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(true);
-        state.setPvpRemoteActive(false); 
-        state.setGamePaired(false);     // Ensure paired is false
+        state.setPvpRemoteActive(false);
+        state.setGamePaired(false);
         gameLogic.init();
     });
 
@@ -218,14 +211,11 @@ export function setupEventListeners(stopCb) {
         btn?.addEventListener('click', e => {
             state.setDifficulty(e.target.id.replace('Btn', ''));
             sound.playSound('move');
-            // If vs CPU and game hasn't really started (or is over), re-init. Otherwise, just update buttons.
             if (state.vsCPU && (!state.gameActive || state.board.every(c => c === null))) {
                 gameLogic.init();
-            } else if (state.vsCPU) { // Game active, just update UI
+            } else if (state.vsCPU) {
                 ui.updateAllUIToggleButtons();
             }
-            // If not vs CPU, this setting doesn't apply, but update buttons anyway
-            // Or, more strictly: if (!state.vsCPU) ui.updateAllUIToggleButtons();
         });
     });
 
@@ -234,10 +224,9 @@ export function setupEventListeners(stopCb) {
             state.setWhoGoesFirstSetting(e.target.id.replace('StartsBtn', ''));
             localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting);
             sound.playSound('move');
-            // Re-init if game not active/board empty, AND not in a paired remote game
             if ((!state.gameActive || state.board.every(c => c === null)) && !(state.pvpRemoteActive && state.gamePaired)) {
                 gameLogic.init();
-            } else { // Game active or remote paired, just update UI
+            } else {
                 ui.updateAllUIToggleButtons();
             }
         });
@@ -248,6 +237,5 @@ export function setupEventListeners(stopCb) {
     document.getElementById('soundToggle')?.addEventListener('click', sound.toggleSound);
     ui.changeSymbolsBtn?.addEventListener('click', changeSymbolsBtnHandler);
 
-    // Prevent double-click text selection which can be annoying on a game board
     document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 }

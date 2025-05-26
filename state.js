@@ -19,11 +19,15 @@ export let gameActive = false;
 export let vsCPU = false;
 export let difficulty = 'medium'; // easy, medium, hard
 export let gameVariant = GAME_VARIANTS.CLASSIC; // Default to classic Tic-Tac-Toe
-export let gamePhase = GAME_PHASES.PLACING; // Initial phase, relevant for THREE_PIECE mode
+export let gamePhase = GAME_PHASES.PLACING; // Initial phase
 
 // For THREE_PIECE variant
 export let playerPiecesOnBoard = {}; // e.g., { '🦄': 0, '❤️': 0 }
 export let selectedPieceIndex = null; // Index of the piece selected to be moved
+
+// NEW: Add turn counter
+export let turnCounter = 0;
+
 
 // ----------  PVP REMOTE STATE  ----------
 export let pvpRemoteActive = false;
@@ -78,7 +82,14 @@ export function setVsCPU(isVsCPU) { vsCPU = isVsCPU; }
 export function setDifficulty(newDifficulty) { difficulty = newDifficulty; }
 
 export function setGameVariant(variant) { gameVariant = variant; }
-export function setGamePhase(phase) { gamePhase = phase; }
+
+export function setGamePhase(phase) {
+    // DEBUGGING LOG: Track all calls to setGamePhase
+    console.log(`state.js: setGamePhase CALLED. Old phase: ${gamePhase}, New phase: ${phase}. Timestamp: ${new Date().toISOString()}`);
+    // console.log(new Error().stack); // Optional: uncomment for full call stack
+    gamePhase = phase;
+}
+
 export function setPlayerPiecesOnBoard(playerSymbol, count) { playerPiecesOnBoard[playerSymbol] = count; }
 export function setSelectedPieceIndex(index) { selectedPieceIndex = index; }
 export function resetPlayerPiecesOnBoard() { playerPiecesOnBoard = {}; }
@@ -117,6 +128,17 @@ export function setLastWinner(winner) { lastWinner = winner; }
 export function setPreviousGameExists(exists) { previousGameExists = exists; }
 export function setSoundEnabled(isEnabled) { soundEnabled = isEnabled; }
 
+// NEW: Mutators for turnCounter
+export function incrementTurnCounter() {
+    turnCounter++;
+    console.log(`state.js: incrementTurnCounter. New TC: ${turnCounter}. Timestamp: ${new Date().toISOString()}`); // DEBUGGING LOG
+}
+export function setTurnCounter(tc) {
+    console.log(`state.js: setTurnCounter CALLED. Old TC: ${turnCounter}, New TC: ${tc}. Timestamp: ${new Date().toISOString()}`); // DEBUGGING LOG
+    turnCounter = tc;
+}
+
+
 export function resetScores() {
     myWins = 0;
     opponentWins = 0;
@@ -124,11 +146,14 @@ export function resetScores() {
 }
 
 export function resetGameFlowState() { // Also resets states for the new game variant
+    console.log(`state.js: resetGameFlowState CALLED. Current TC before reset: ${turnCounter}. Timestamp: ${new Date().toISOString()}`); // DEBUGGING LOG
     lastWinner = null;
     previousGameExists = (myWins + opponentWins + draws) > 0;
-    gamePhase = GAME_PHASES.PLACING; // Default to placing for any new game start
+    gamePhase = GAME_PHASES.PLACING;
     resetPlayerPiecesOnBoard();
     selectedPieceIndex = null;
+    turnCounter = 0; // <-- NEW: Reset turn counter here
+    console.log(`state.js: resetGameFlowState FINISHED. New TC: ${turnCounter}. Timestamp: ${new Date().toISOString()}`); // DEBUGGING LOG
     // gameVariant is typically set by user choice and persists or is reset by mode button clicks
 }
 
