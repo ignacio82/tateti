@@ -41,6 +41,19 @@ const peerJsCallbacks = {
     onDataReceived: (data) => {
         console.log(`PeerConnection: RX RAW @ ${new Date().toISOString()}: Type: ${data.type}`, JSON.stringify(data));
 
+        // Handle 'reset_game' message first
+        if (data.type === 'reset_game') {
+            console.log(`[P2P] Received 'reset_game'. Initializing game locally.`);
+            ui.showOverlay("Nueva partida iniciando..."); // Inform the user
+
+            // Short delay for the user to see the overlay message
+            setTimeout(() => {
+                // ui.hideOverlay(); // init() already calls hideOverlay
+                gameLogic.init(); // Reinitialize the game state and UI
+            }, 500); // Adjust delay as needed, or remove if init() is sufficient
+            return; // Important: Stop further processing for this message
+        }
+
         if (!state.pvpRemoteActive && !['ping', 'player_info'].includes(data.type)) {
             console.warn("PeerConnection: Ignoring data (not PVP remote / not player_info/ping).", data); return;
         }
@@ -59,8 +72,8 @@ const peerJsCallbacks = {
             if (typeof data.turnCounter !== 'number' || data.turnCounter <= state.turnCounter) {
               console.warn(`[P2P] Ignoring stale/duplicate state. RX TC: ${data.turnCounter}, Local TC: ${state.turnCounter}.`, data); return;
             }
-            
-            const { board, currentPlayer, gamePhase: gamePhaseFromSender, gameActive, turnCounter: receivedTurnCounter, 
+
+            const { board, currentPlayer, gamePhase: gamePhaseFromSender, gameActive, turnCounter: receivedTurnCounter,
                     gameVariant: variantFromSender, /* NEW */
                     winner, draw, selectedPieceIndex } = data;
 
@@ -91,7 +104,7 @@ const peerJsCallbacks = {
             const newDerivedPhase = gameLogic.boardToPhase(state.board, state.gameVariant, gamePhaseFromSender);
             console.log(`[P2P] peerConnection: gamePhaseFromSender: ${gamePhaseFromSender}. Derived new phase: ${newDerivedPhase}. Current local state.gamePhase before set: ${state.gamePhase}.`);
             state.setGamePhase(newDerivedPhase);
-            
+
             console.log(`[P2P] Applying UI updates. Board to render:`, JSON.stringify(state.board));
             ui.clearBoardUI(); ui.clearSelectedPieceHighlight();
             state.board.forEach((symbol, index) => ui.updateCellUI(index, symbol || null));
@@ -134,7 +147,7 @@ const peerJsCallbacks = {
             return;
         }
 
-        if (data.type === 'restart_request') { /* ... (keep existing logic, init() will reset TC and variant if needed) ... */ 
+        if (data.type === 'restart_request') { /* ... (keep existing logic, init() will reset TC and variant if needed) ... */
             const requesterName = state.opponentPlayerName || "El oponente";
             ui.showOverlay(`${requesterName} quiere reiniciar. Aceptando...`);
             if (window.peerJsMultiplayer?.send) {
@@ -143,7 +156,7 @@ const peerJsCallbacks = {
             setTimeout(() => { ui.hideOverlay(); gameLogic.init(); }, 100);
             return;
         }
-        if (data.type === 'restart_ack') { /* ... (keep existing logic, init() will reset TC and variant if needed) ... */ 
+        if (data.type === 'restart_ack') { /* ... (keep existing logic, init() will reset TC and variant if needed) ... */
             ui.showOverlay("Reinicio aceptado. Nueva partida...");
             setTimeout(() => { ui.hideOverlay(); gameLogic.init(); }, 100);
             return;
@@ -167,12 +180,12 @@ const peerJsCallbacks = {
         }
         console.warn(`PeerConnection: Received unhandled data type: ${data.type} at ${new Date().toISOString()}`, data);
     },
-    onConnectionClose: () => { /* ... (keep existing logic) ... */ 
+    onConnectionClose: () => { /* ... (keep existing logic) ... */
         console.log(`PeerConnection: Connection closed. Timestamp: ${new Date().toISOString()}`);
         if(state.pvpRemoteActive){ui.showOverlay("El oponente se ha desconectado.");ui.updateStatus("Conexión perdida.");}
         state.resetRemoteState(); gameLogic.updateAllUITogglesHandler(); gameLogic.init();
     },
-    onError: (err) => { /* ... (keep existing logic) ... */ 
+    onError: (err) => { /* ... (keep existing logic) ... */
         console.error(`PeerConnection: PeerJS Error Object at ${new Date().toISOString()}:`, err);
         const nonOverlayErrorTypes = ['peer-unavailable','network','socket-error','server-error','socket-closed','disconnected','webrtc','negotiation-failed','browser-incompatible'];
         if(err.type&&!nonOverlayErrorTypes.includes(err.type)){ui.showOverlay(`Error de conexión: ${err.type||err.message||'desconocido'}`);}
@@ -182,14 +195,14 @@ const peerJsCallbacks = {
     }
 };
 
-export function initializePeerAsHost(stopPreviousGameCallback) { /* ... (keep existing logic) ... */ 
+export function initializePeerAsHost(stopPreviousGameCallback) { /* ... (keep existing logic) ... */
     stopPreviousGameCallback(); state.setVsCPU(false); state.setPvpRemoteActive(true);
     state.setIAmPlayer1InRemote(true); state.setGamePaired(false); state.setCurrentHostPeerId(null);
     gameLogic.updateAllUITogglesHandler(); ui.updateStatus("Estableciendo conexión como Host..."); ui.hideOverlay();
     if(window.peerJsMultiplayer?.init) window.peerJsMultiplayer.init(null, peerJsCallbacks);
     else {console.error(`PeerConnection: peerJsMultiplayer.init not found (host). TS: ${new Date().toISOString()}`); peerJsCallbacks.onError?.({type:'init_failed',message:'Módulo multijugador no encontrado.'});}
 }
-export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) { /* ... (keep existing logic) ... */ 
+export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) { /* ... (keep existing logic) ... */
     stopPreviousGameCallback(); state.setVsCPU(false); state.setPvpRemoteActive(true);
     state.setIAmPlayer1InRemote(false); state.setGamePaired(false);
     gameLogic.updateAllUITogglesHandler(); ui.hideOverlay();
@@ -200,11 +213,11 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
     if(window.peerJsMultiplayer?.init) window.peerJsMultiplayer.init(null, peerJsCallbacks);
     else {console.error(`PeerConnection: peerJsMultiplayer.init not found (joiner). TS: ${new Date().toISOString()}`); peerJsCallbacks.onError?.({type:'init_failed',message:'Módulo multijugador no encontrado.'});}
 }
-export function sendPeerData(data) { /* ... (keep existing logic) ... */ 
+export function sendPeerData(data) { /* ... (keep existing logic) ... */
     if(window.peerJsMultiplayer?.send && state.gamePaired){ window.peerJsMultiplayer.send(data); }
     else if(!state.gamePaired)console.warn(`PeerConnection: Cannot send, game not paired. Type: ${data.type}. TS: ${new Date().toISOString()}`, data);
     else console.error(`PeerConnection: peerJsMultiplayer.send not available. Type: ${data.type}. TS: ${new Date().toISOString()}`, data);
 }
-export function closePeerSession() { /* ... (keep existing logic) ... */ 
-    if(window.peerJsMultiplayer?.close) window.peerJsMultiplayer.close(); 
+export function closePeerSession() { /* ... (keep existing logic) ... */
+    if(window.peerJsMultiplayer?.close) window.peerJsMultiplayer.close();
 }

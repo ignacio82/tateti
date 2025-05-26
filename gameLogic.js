@@ -7,6 +7,7 @@ import { calculateBestMove,
          cpuMove,
          cpuMoveThreePiece,
          calculateBestSlideForHint } from './cpu.js';
+import * as peerConnection from './peerConnection.js'; // Added for sending reset_game message
 
 // boardToPhase function (ensure this is robust)
 export function boardToPhase(board, variant, currentGlobalPhase) {
@@ -44,7 +45,7 @@ let _updateAllUITogglesHandler = () => ui.updateAllUIToggleButtons();
 export const setUpdateAllUITogglesHandler = h => (_updateAllUITogglesHandler = h);
 export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler();
 
-export function showEasyModeHint() { 
+export function showEasyModeHint() {
   ui.clearSuggestedMoveHighlight();
   if (state.vsCPU && state.difficulty === 'easy' && state.currentPlayer === state.myEffectiveIcon && state.gameActive) {
     const humanIcon = state.myEffectiveIcon; const cpuIcon = state.opponentEffectiveIcon;
@@ -96,7 +97,7 @@ export function checkDraw(board=state.board){
 }
 
 export function switchPlayer() {
-  const capturedPhaseBeforeSwitch = state.gamePhase; 
+  const capturedPhaseBeforeSwitch = state.gamePhase;
   console.log(`gameLogic.switchPlayer: Phase captured before switch: ${capturedPhaseBeforeSwitch}. Current player: ${state.currentPlayer}. Timestamp: ${new Date().toISOString()}`);
   state.setCurrentPlayer(state.currentPlayer === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon);
   state.setSelectedPieceIndex(null); ui.clearSelectedPieceHighlight();
@@ -116,7 +117,7 @@ export function switchPlayer() {
 
   // Moved draw check after status update and player switch for accuracy
   if (state.gameActive && state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
-      if (checkDraw(state.board)) { 
+      if (checkDraw(state.board)) {
         endDraw(); // This will set gameActive false
         // No return true here, as endDraw handles game end.
         // If a draw occurs, subsequent logic like showEasyModeHint shouldn't run for a non-active game.
@@ -127,14 +128,14 @@ export function switchPlayer() {
   if (state.gameActive && isMyTurnForHint) showEasyModeHint(); // Only show hint if game is still active
 }
 
-export function init() { 
+export function init() {
   console.log(`gameLogic.init() called. Timestamp: ${new Date().toISOString()}`);
   ui.removeConfetti(); ui.hideOverlay(); ui.hideQRCode(); ui.clearBoardUI();
-  state.resetGameFlowState(); 
+  state.resetGameFlowState();
   state.setBoard(Array(9).fill(null)); state.setGameActive(false);
   player.determineEffectiveIcons();
   const initialPhase = boardToPhase(state.board, state.gameVariant, state.gamePhase); // state.gamePhase is PLACING from reset
-  state.setGamePhase(initialPhase); 
+  state.setGamePhase(initialPhase);
   console.log(`gameLogic.init(): Phase is: ${state.gamePhase}. TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
 
   if (state.pvpRemoteActive && state.gamePaired) {
@@ -153,7 +154,7 @@ export function init() {
     else if(!state.iAmPlayer1InRemote&&state.currentHostPeerId){ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);}
     else if(state.iAmPlayer1InRemote&&!state.currentHostPeerId){ui.updateStatus("Estableciendo conexión como Host...");}
     else{ui.updateStatus("Modo Remoto: Esperando conexión.");}
-  } else { 
+  } else {
     console.log(`gameLogic.init(): Local or CPU game. TC: ${state.turnCounter}.`); state.setGameActive(true);
     let sPlayer=state.gameP1Icon; // Default starter
     if (state.whoGoesFirstSetting === 'player1') sPlayer = state.gameP1Icon; // Explicitly P1
@@ -199,7 +200,7 @@ export function makeMove(idx, sym) { // sym is the player making the move
     // ui.updateStatus("Debes mover una pieza existente."); // Optionally inform the user
     return false; // Critical: Do not allow "placing" if not in "PLACING" phase for 3-piece.
   }
-  
+
   // ③ If in PLACING phase (for 3-Piece variant), count how many pieces THIS player (`sym`) already has.
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE /* && state.gamePhase is PLACING due to check above */) {
     const piecesOfPlayerSym = state.board.filter(p => p === sym).length;
@@ -251,7 +252,7 @@ export function makeMove(idx, sym) { // sym is the player making the move
   }
   state.incrementTurnCounter();
   console.log(`gameLogic.makeMove: Turn counter incremented to ${state.turnCounter} at end by ${sym}. Timestamp: ${new Date().toISOString()}`);
-  return true; 
+  return true;
 }
 
 export function movePiece(fromIdx, toIdx, sym) {
@@ -296,14 +297,14 @@ export function movePiece(fromIdx, toIdx, sym) {
   return true;
 }
 
-export function endGame(winnerSym, winningCells) { 
+export function endGame(winnerSym, winningCells) {
   console.log(`gameLogic.endGame: Winner symbol raw: '${winnerSym}'. TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
   state.setGameActive(false);
-  state.setGamePhase(state.GAME_PHASES.GAME_OVER); 
+  state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false); ui.clearSuggestedMoveHighlight(); ui.clearSelectedPieceHighlight();
-  if (winnerSym) { 
+  if (winnerSym) {
     ui.launchConfetti(); ui.highlightWinner(winningCells); sound.playSound('win');
-    const winnerName = player.getPlayerName(winnerSym); 
+    const winnerName = player.getPlayerName(winnerSym);
     console.log(`gameLogic.endGame: Winner name determined: '${winnerName}' for symbol '${winnerSym}'`);
     ui.updateStatus(`${winnerName} GANA!`);
   } else {
@@ -315,17 +316,45 @@ export function endGame(winnerSym, winningCells) {
   else{if(winnerSym===state.gameP1Icon)state.incrementMyWins();else if (winnerSym===state.gameP2Icon)state.incrementOpponentWins();}
   localStorage.setItem('myWinsTateti',state.myWins.toString()); localStorage.setItem('opponentWinsTateti',state.opponentWins.toString());
   updateScoreboardHandler();
-  if(!state.pvpRemoteActive){console.log("endGame: Scheduling local/CPU restart."); setTimeout(init,state.AUTO_RESTART_DELAY_WIN);}
-  else{console.log("endGame: P2P game ended. Winner declared. Waiting for restart action.");}
+
+  if (!state.pvpRemoteActive) { // For local or CPU games
+    console.log("endGame: Scheduling local/CPU restart.");
+    setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
+  } else { // For P2P games
+    console.log("endGame: P2P game ended. Winner declared. Scheduling automatic restart.");
+    // The winner message is already shown by ui.updateStatus.
+    // Schedule the reset process.
+    setTimeout(() => {
+      if (state.gamePaired) { // Only send if still paired
+        console.log("endGame: Sending 'reset_game' message to peer.");
+        peerConnection.sendPeerData({ type: 'reset_game' });
+      }
+      console.log("endGame: Calling local init() for P2P automatic restart.");
+      init(); // Reset this client's game state
+    }, state.AUTO_RESTART_DELAY_WIN); // Use existing delay constant for win
+  }
 }
 
-export function endDraw() { 
+export function endDraw() {
   console.log(`gameLogic.endDraw. TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
   state.setGameActive(false); state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false); ui.clearSuggestedMoveHighlight(); ui.clearSelectedPieceHighlight();
   ui.playDrawAnimation(); sound.playSound('draw'); ui.updateStatus('¡EMPATE!');
   state.incrementDraws(); state.setLastWinner(null); state.setPreviousGameExists(true);
-  localStorage.setItem('drawsTateti',state.draws.toString()); updateScoreboardHandler();
-  if(!state.pvpRemoteActive){console.log("endDraw: Scheduling local/CPU restart."); setTimeout(init,state.AUTO_RESTART_DELAY_DRAW);}
-  else{console.log("endDraw: P2P game ended in a draw. Waiting for restart action.");}
+  localStorage.setItem('drawsTateti', state.draws.toString()); updateScoreboardHandler();
+
+  if (!state.pvpRemoteActive) { // For local or CPU games
+    console.log("endDraw: Scheduling local/CPU restart.");
+    setTimeout(init, state.AUTO_RESTART_DELAY_DRAW);
+  } else { // For P2P games
+    console.log("endDraw: P2P game ended in a draw. Scheduling automatic restart.");
+    setTimeout(() => {
+      if (state.gamePaired) { // Only send if still paired
+        console.log("endDraw: Sending 'reset_game' message to peer.");
+        peerConnection.sendPeerData({ type: 'reset_game' });
+      }
+      console.log("endDraw: Calling local init() for P2P automatic restart after draw.");
+      init(); // Reset this client's game state
+    }, state.AUTO_RESTART_DELAY_DRAW); // Use existing delay constant for draw
+  }
 }
