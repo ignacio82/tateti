@@ -1,6 +1,6 @@
 // peerConnection.js
 import * as state from './state.js';
-import * as ui from './ui.js'; // Import ui directly
+import * as ui from './ui.js';
 import * as player from './player.js';
 import * as gameLogic from './gameLogic.js';
 import * as sound from './sound.js';
@@ -11,11 +11,9 @@ const peerJsCallbacks = {
             state.setCurrentHostPeerId(id);
             const desiredBaseUrl = 'https://tateti.martinez.fyi'; // Or your development URL
             const gameLink = `${desiredBaseUrl}/?room=${id}`;
-
             ui.updateStatus(`Comparte el enlace o ID: ${id}`);
             ui.displayQRCode(gameLink);
         } else if (state.pvpRemoteActive && !state.iAmPlayer1InRemote) {
-            // This is the joiner, their peer ID is 'id'. Now connect to host.
             if (state.currentHostPeerId && window.peerJsMultiplayer?.connect) {
                 console.log(`PeerJS: Joiner's peer ID is ${id}. Attempting to connect to host: ${state.currentHostPeerId}`);
                 window.peerJsMultiplayer.connect(state.currentHostPeerId);
@@ -29,110 +27,125 @@ const peerJsCallbacks = {
     },
     onNewConnection: (conn) => {
         console.log('PeerConnection: Incoming connection from', conn.peer);
-        ui.hideQRCode(); // Host no longer needs to show QR once someone connects
+        ui.hideQRCode();
         ui.showOverlay("Jugador 2 conectándose...");
         ui.updateStatus("Jugador 2 está conectándose...");
-        // Connection event handlers (open, data, close, error) for this 'conn'
-        // are set up by peerjs-multiplayer.js when it assigns it to currentConnection
     },
     onConnectionOpen: () => {
         console.log("PeerConnection: Data connection opened with peer.");
         state.setGamePaired(true);
-        ui.hideOverlay(); // Hide "connecting..." overlay
-        ui.hideQRCode();  // Ensure QR is hidden for both host and joiner
-
-        player.determineEffectiveIcons(); // Determine icons now that connection is open
+        ui.hideOverlay();
+        ui.hideQRCode();
+        player.determineEffectiveIcons();
         if (window.peerJsMultiplayer?.send) {
             window.peerJsMultiplayer.send({
                 type: 'player_info',
                 name: state.myPlayerName,
-                icon: state.myEffectiveIcon // Send my chosen/effective icon
+                icon: state.myEffectiveIcon
             });
         }
         ui.updateStatus("¡Conectado! Iniciando partida...");
-        sound.playSound('win'); // Or a connection success sound
-        gameLogic.init(); // Initialize the game for both players
+        sound.playSound('win');
+        gameLogic.init();
     },
     onDataReceived: (data) => {
-        console.log("PeerConnection: Data received:", data);
-        if(data.type === 'player_info') {
+        console.log(`PeerConnection: Data received at ${new Date().toLocaleTimeString()}:`, JSON.parse(JSON.stringify(data)));
+        if (data.type === 'player_info') {
             state.setOpponentPlayerName(data.name || 'Oponente Remoto');
-            state.setOpponentPlayerIcon(data.icon); // Store opponent's chosen icon
-            console.log("PeerConnection: Opponent info updated:", state.opponentPlayerName, state.opponentPlayerIcon);
-            player.determineEffectiveIcons(); // Re-determine all effective icons with opponent's info
+            state.setOpponentPlayerIcon(data.icon);
+            player.determineEffectiveIcons();
             ui.updateScoreboard();
-
-            // Update status based on whose turn it is, if game is active
             if (state.gameActive) {
                 ui.updateStatus(state.isMyTurnInRemote ?
                     `Tu Turno ${player.getPlayerName(state.currentPlayer)}` :
                     `Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
             }
-            // If game wasn't active but now paired, init might have been waiting for this
-            if(!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
+            if (!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
                 gameLogic.init();
             }
             return;
         }
 
-        // Guard: Only process game moves if game is active, remote, paired, AND it's NOT currently my turn (i.e., I'm expecting a move from opponent)
         if (!state.gameActive || !state.pvpRemoteActive || !state.gamePaired || state.isMyTurnInRemote) {
-             console.warn("PeerConnection: Received game data but not expecting it (e.g., not opponent's turn, game not active/paired).", {
+            console.warn("PeerConnection: Received game data but not expecting it.", {
                 isMyTurnInRemote: state.isMyTurnInRemote,
                 gameActive: state.gameActive,
                 pvpRemoteActive: state.pvpRemoteActive,
                 gamePaired: state.gamePaired,
-                receivedDataType: data.type
+                receivedDataType: data.type,
+                localGamePhase: state.gamePhase,
+                localCurrentPlayer: state.currentPlayer
             });
-             return;
+            return;
         }
 
         if (data.type === 'move') {
-            const playerWhoMadeTheMove = state.opponentEffectiveIcon; // The data always comes from the opponent
+            // The icon sent in data.playerWhoMadeTheMoveIcon IS state.opponentEffectiveIcon for the receiver.
+            const moverIcon = data.playerWhoMadeTheMoveIcon; 
+            if (!moverIcon) {
+                console.error("PeerConnection: Move data received without 'playerWhoMadeTheMoveIcon'. Cannot process.", data);
+                return;
+            }
 
-            // CRITICAL: Update local gamePhase based on sender's state *before* processing the move logic
+            // Synchronize gamePhase from sender.
             if (data.gamePhaseAfterMove) {
-                if (state.gamePhase !== data.gamePhaseAfterMove) { // Only log if it's an actual change
-                    console.log(`PeerConnection: Syncing gamePhase. Local was ${state.gamePhase}, received ${data.gamePhaseAfterMove}`);
+                if (state.gamePhase !== data.gamePhaseAfterMove) {
+                    console.log(`PeerConnection: Syncing gamePhase from ${state.gamePhase} to ${data.gamePhaseAfterMove} based on received data.`);
                     state.setGamePhase(data.gamePhaseAfterMove);
                 }
             } else {
-                console.warn("PeerConnection: Received move data without 'gamePhaseAfterMove'. This might lead to desync if phases differ.");
-                // Not changing local phase, relying on local logic. This could be the source of phase desync if local logic fails.
+                console.warn("PeerConnection: Move data received without 'gamePhaseAfterMove'. Phase sync might be inexact.");
             }
 
+            // CRITICAL: Set currentPlayer to the player who made the move BEFORE calling gameLogic functions.
+            // This ensures gameLogic functions (especially their internal switchPlayer) operate on the correct context.
+            state.setCurrentPlayer(moverIcon);
+            console.log(`PeerConnection: Set currentPlayer to MOVER (${moverIcon}) before processing move.`);
+
             let moveProcessedSuccessfully = false;
-            // Determine if it's a slide or placement based on the *now synchronized* gamePhase and data content
-            if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
-                if (typeof data.from === 'number' && typeof data.to === 'number') {
-                    // This is a slide move
-                    moveProcessedSuccessfully = gameLogic.movePiece(data.from, data.to, playerWhoMadeTheMove);
+            const isSlideDataFormat = typeof data.from === 'number' && typeof data.to === 'number';
+            const isPlacementDataFormat = typeof data.index === 'number';
+
+            if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+                if (isSlideDataFormat) {
+                    if (state.gamePhase !== state.GAME_PHASES.MOVING) {
+                        console.warn(`PeerConnection: Received slide data (from/to) but local phase was ${state.gamePhase} (expected MOVING after sync). Forcing to MOVING.`);
+                        state.setGamePhase(state.GAME_PHASES.MOVING);
+                    }
+                    console.log(`PeerConnection: Processing remote slide: from ${data.from} to ${data.to} by ${moverIcon}. Local phase: ${state.gamePhase}`);
+                    moveProcessedSuccessfully = gameLogic.movePiece(data.from, data.to, moverIcon);
+                } else if (isPlacementDataFormat) {
+                    if (state.gamePhase !== state.GAME_PHASES.PLACING) {
+                         // This might happen if data.gamePhaseAfterMove indicated MOVING (e.g. 6th piece placed)
+                        console.warn(`PeerConnection: Received placement data (index) but local phase was ${state.gamePhase} (expected PLACING, or MOVING if it's the very last placement that triggers phase change).`);
+                    }
+                    console.log(`PeerConnection: Processing remote placement: index ${data.index} by ${moverIcon}. Local phase: ${state.gamePhase}`);
+                    moveProcessedSuccessfully = gameLogic.makeMove(data.index, moverIcon);
                 } else {
-                    console.warn("PeerConnection: Expected slide move (from/to) due to MOVING phase, but data format is different. Move data:", data);
+                    console.warn("PeerConnection: 3-Piece mode - Received 'move' data in unrecognized format.", data);
                 }
-            } else if (typeof data.index === 'number') { 
-                // This is a placement move (Classic or 3-Piece PLACING phase)
-                // Ensure that if we are in 3-piece and PLACING phase, we process it as such.
-                if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase !== state.GAME_PHASES.PLACING) {
-                    console.warn(`PeerConnection: Received placement move (index=${data.index}), but local gamePhase is ${state.gamePhase} (expected PLACING for 3-piece placement).`);
+            } else { // Classic game variant
+                if (isPlacementDataFormat) {
+                    console.log(`PeerConnection: Processing remote classic placement: index ${data.index} by ${moverIcon}.`);
+                    moveProcessedSuccessfully = gameLogic.makeMove(data.index, moverIcon);
+                } else {
+                     console.warn("PeerConnection: Classic mode - Received 'move' data without index.", data);
                 }
-                moveProcessedSuccessfully = gameLogic.makeMove(data.index, playerWhoMadeTheMove);
-            } else {
-                console.warn("PeerConnection: Received 'move' data in unexpected format. Current local gamePhase:", state.gamePhase, "Data:", data);
             }
 
             if (moveProcessedSuccessfully) {
-                // gameLogic.makeMove/movePiece has updated the board, checked for win/draw locally,
-                // called endGame/endDraw if necessary (which sets state.gameActive = false),
-                // and called switchPlayer (which updated local state.currentPlayer).
-
-                // Now, use data.nextPlayerIcon from the sender to ensure perfect sync for whose turn it is.
-                // Also, use data.winner and data.draw to confirm game end state if local logic didn't catch it.
-                applyRemoteGameLogic(playerWhoMadeTheMove, data.winner, data.draw, data.nextPlayerIcon);
+                // After gameLogic.makeMove/movePiece, state.currentPlayer has been switched to the *receiver* (local player).
+                // data.winner and data.draw reflect outcome for the *mover*.
+                console.log(`PeerConnection: Move processed by gameLogic. gameActive: ${state.gameActive}, local currentPlayer after logic (should be me): ${state.currentPlayer}`);
+                applyRemoteMoveOutcome(data.winner, data.draw); // Pass only outcome, turn is now locally correct.
             } else {
-                console.warn("PeerConnection: Remote move was not processed successfully by local gameLogic.", {dataReceived: data, localGamePhase: state.gamePhase, localCurrentPlayer: state.currentPlayer});
-                // This indicates a potentially serious desync or invalid move received.
-                ui.showOverlay("Error de sincronización. El juego puede estar inconsistente.");
+                console.error("PeerConnection: Remote move FAILED to process in local gameLogic.", {
+                    dataReceived: data,
+                    localGamePhaseDuringProcessing: state.gamePhase,
+                    localCurrentPlayerDuringProcessing: state.currentPlayer // This was set to moverIcon
+                });
+                ui.showOverlay("Error Crítico de Sincronización!");
+                // Potentially try to reset or show a disconnect message, as state is unreliable.
             }
 
         } else if (data.type === 'restart_request') {
@@ -151,85 +164,70 @@ const peerJsCallbacks = {
     },
     onConnectionClose: () => {
         console.log("PeerConnection: Connection closed.");
-        if (state.pvpRemoteActive) { 
+        if (state.pvpRemoteActive) {
             ui.showOverlay("El oponente se ha desconectado.");
             ui.updateStatus("Conexión perdida.");
         }
-        state.resetRemoteState(); 
-        gameLogic.updateAllUITogglesHandler(); 
+        state.resetRemoteState();
+        gameLogic.updateAllUITogglesHandler();
     },
     onError: (err) => {
         console.error('PeerConnection: PeerJS Error Object:', err);
         ui.showOverlay(`Error de conexión: ${err.type || 'desconocido'}`);
         state.resetRemoteState();
         gameLogic.updateAllUITogglesHandler();
-        ui.hideQRCode(); 
+        ui.hideQRCode();
     }
 };
 
-function applyRemoteGameLogic(playerWhoMadeTheMoveSymbol, receivedWinnerSymbol, receivedIsDraw, receivedNextPlayerIcon) {
-    // The functions gameLogic.makeMove or gameLogic.movePiece were already called
-    // and have updated the local board (state.board), local state.currentPlayer (via switchPlayer),
-    // and potentially local state.gamePhase and state.gameActive (if the game ended).
+// Renamed and simplified this function
+function applyRemoteMoveOutcome(receivedWinnerSymbol, receivedIsDraw) {
+    // gameLogic.makeMove/movePiece was ALREADY CALLED.
+    // It handled board updates, win/draw checks, and called switchPlayer.
+    // state.currentPlayer is now the local player if the game continues.
+    // state.gameActive is false if the game ended.
 
-    // Sync game over state based on received data, if our local logic didn't already conclude the game.
-    if (receivedWinnerSymbol && state.gameActive) { // If remote says winner AND we thought game was still active
-        console.warn(`PeerConnection: Remote declared winner ${receivedWinnerSymbol}, but local game was still active. Forcing game end.`);
-        // Attempt to find the winning cells for the declared winner to highlight them
-        const winningCells = gameLogic.checkWin(receivedWinnerSymbol, state.board);
-        gameLogic.endGame(receivedWinnerSymbol, winningCells || []); // End game with remote's winner
-        return; // Game ended
+    if (receivedWinnerSymbol && state.gameActive) {
+        // This means remote declared a winner, but our local logic didn't end the game.
+        // This indicates a desync in win detection. Force end based on remote.
+        console.warn(`PeerConnection (applyOutcome): Remote declared winner ${receivedWinnerSymbol}, but local game still active. Forcing end.`);
+        const winningCells = gameLogic.checkWin(receivedWinnerSymbol, state.board); // Re-check for highlight
+        gameLogic.endGame(receivedWinnerSymbol, winningCells || []);
+        return;
     }
-    if (receivedIsDraw && state.gameActive) { // If remote says draw AND we thought game was still active
-        console.warn("PeerConnection: Remote declared draw, but local game was still active. Forcing draw.");
-        gameLogic.endDraw(); // End game as draw
-        return; // Game ended
-    }
-
-    // If the game is locally already inactive (ended), but remote didn't send win/draw, something is off.
-    // However, if remote also sent win/draw, the above blocks would handle it.
-    // If game genuinely ended, no turn logic is needed.
-    if (!state.gameActive) {
-        console.log("applyRemoteGameLogic: Game is not active locally, assuming game end handled.");
-        ui.setBoardClickable(false); // Ensure board isn't clickable
+    if (receivedIsDraw && state.gameActive) {
+        // Remote declared a draw, but local logic didn't end. Force end.
+        console.warn("PeerConnection (applyOutcome): Remote declared draw, but local game still active. Forcing draw.");
+        gameLogic.endDraw();
         return;
     }
 
-    // If game continues (no winner, no draw confirmed by remote AND local game is active):
-    // CRITICAL: Synchronize currentPlayer and turn status based on sender's 'nextPlayerIcon'.
-    if (receivedNextPlayerIcon) {
-        state.setCurrentPlayer(receivedNextPlayerIcon);
-    } else {
-        console.warn("applyRemoteGameLogic: No 'receivedNextPlayerIcon' in data, cannot definitively sync turn. Relying on local switchPlayer.");
-        // If this happens, state.currentPlayer would be what local switchPlayer set it to.
-    }
-    
-    // The gamePhase was ideally set from data.gamePhaseAfterMove before makeMove/movePiece.
-    // Re-affirm it if it's part of the explicit sync, or ensure makeMove/movePiece did its job.
-    // For now, we assume gamePhase is correct due to the earlier sync in onDataReceived.
-
-    const isMyTurnNow = state.currentPlayer === state.myEffectiveIcon;
-    state.setIsMyTurnInRemote(isMyTurnNow);
-
-    if (isMyTurnNow) {
-        // Update status based on the now-current (and synchronized) gamePhase and currentPlayer
-        if(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
-             ui.updateStatus(`${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`);
-        } else if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
-            const placed = state.board.filter(s => s === state.currentPlayer).length;
-            // Ensure `placed` doesn't exceed max, though gameLogic.makeMove should prevent invalid states
-            const displayPlacedCount = Math.min(placed, state.MAX_PIECES_PER_PLAYER -1);
-            ui.updateStatus(`${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${displayPlacedCount + 1}/3).`);
-        } else { // Classic or other states
-             ui.updateStatus(`Tu Turno ${player.getPlayerName(state.currentPlayer)}`);
-        }
-        ui.setBoardClickable(true);
-        gameLogic.showEasyModeHint();
-    } else {
-        // It's not my turn. This is expected if receivedNextPlayerIcon was the opponent.
-        ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
+    if (!state.gameActive) {
+        // Game ended locally (correctly by makeMove/movePiece). No further turn processing.
+        console.log("PeerConnection (applyOutcome): Game is locally inactive. Game over state handled by gameLogic.");
         ui.setBoardClickable(false);
+        return;
     }
+
+    // If game continues (game is active, no winner/draw reported by remote that we didn't already process):
+    // The turn has already been switched to the local player by gameLogic.makeMove/movePiece -> switchPlayer.
+    // So, state.currentPlayer should be state.myEffectiveIcon.
+    state.setIsMyTurnInRemote(true); // It's my turn now.
+
+    let statusMsg = `Tu Turno ${player.getPlayerName(state.currentPlayer)}`;
+    if(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+        if (state.gamePhase === state.GAME_PHASES.MOVING) {
+             statusMsg = `${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`;
+        } else if (state.gamePhase === state.GAME_PHASES.PLACING) {
+            const placed = state.board.filter(s => s === state.currentPlayer).length;
+            const displayPlacedCount = Math.min(placed, state.MAX_PIECES_PER_PLAYER -1);
+            statusMsg = `${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${displayPlacedCount + 1}/3).`;
+        }
+    }
+    ui.updateStatus(statusMsg);
+    ui.setBoardClickable(true);
+    gameLogic.showEasyModeHint();
+    console.log(`PeerConnection (applyOutcome): Turn set to local player. My turn: ${state.isMyTurnInRemote}. Current player: ${state.currentPlayer}. Game phase: ${state.gamePhase}`);
 }
 
 
@@ -284,6 +282,7 @@ export function initializePeerAsJoiner(hostIdFromUrl, stopPreviousGameCallback) 
 
 export function sendPeerData(data) {
     if (window.peerJsMultiplayer && typeof window.peerJsMultiplayer.send === 'function') {
+        console.log(`PeerConnection: Sending data at ${new Date().toLocaleTimeString()}:`, JSON.parse(JSON.stringify(data)));
         window.peerJsMultiplayer.send(data);
     } else {
         console.error("PeerConnection: peerJsMultiplayer.send not available.");

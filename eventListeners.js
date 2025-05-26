@@ -4,7 +4,6 @@ import * as state from './state.js';
 import * as player from './player.js';
 import * as sound from './sound.js';
 import * as gameLogic from './gameLogic.js';
-// import { cpuMove } from './cpu.js';  // used via cpuMoveHandler in game.js
 import * as peerConnection from './peerConnection.js';
 import * as theme from './theme.js';
 
@@ -15,10 +14,8 @@ let mainStopAnyGameInProgressAndResetUICallback;
  * ------------------------------------------------------------------ */
 
 function handleCellClick(e) {
-    // Initial gameActive check; more nuanced checks might be needed if a move could start a game.
-    // If no piece is selected in moving phase, gameActive must be true to proceed.
     if (!state.gameActive && !(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING && state.selectedPieceIndex !== null)) {
-        if (!state.gameActive) return; // Stricter check if not trying to complete a move in 3-piece
+        if (!state.gameActive) return;
     }
 
     const clickedCell = e.target.closest('.cell');
@@ -53,17 +50,11 @@ function handleCellClick(e) {
             } else if (state.board[cellIndex] === null) {           // destination (attempt to move piece)
                 const fromIndex = state.selectedPieceIndex;
                 const toIndex = cellIndex;
-                const playerMakingTheMove = state.currentPlayer; // Player whose turn it was
+                const playerMakingTheMove = state.currentPlayer; // Player whose turn it was when initiating this action
 
                 ui.clearSelectedPieceHighlight();
                 
-                if (
-                    gameLogic.movePiece(
-                        fromIndex,
-                        toIndex,
-                        playerMakingTheMove
-                    )
-                ) {
+                if (gameLogic.movePiece(fromIndex, toIndex, playerMakingTheMove)) {
                     // Move succeeded. gameLogic.movePiece has updated:
                     // - state.board
                     // - state.currentPlayer (to the next player via switchPlayer)
@@ -75,12 +66,11 @@ function handleCellClick(e) {
                             type: 'move',
                             from: fromIndex,
                             to: toIndex,
-                            // Send state *after* the move was processed locally
                             gamePhaseAfterMove: state.gamePhase, 
-                            nextPlayerIcon: state.currentPlayer // This is the player whose turn is NEXT
+                            playerWhoMadeTheMoveIcon: playerMakingTheMove // Send who made the move
+                            // state.currentPlayer is now the *next* player due to switchPlayer in movePiece
                         };
 
-                        // Check win/draw for the player *who made the move*
                         const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board);
                         if (winDetails) {
                             moveData.winner = playerMakingTheMove;
@@ -91,35 +81,30 @@ function handleCellClick(e) {
 
                         peerConnection.sendPeerData(moveData);
 
-                        // Transition local UI to waiting state ONLY if the game didn't end on this move
                         if (!moveData.winner && !moveData.draw && state.gameActive) { 
                             state.setIsMyTurnInRemote(false);
-                            // state.currentPlayer is already the opponent (next player) due to switchPlayer in movePiece
-                            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
+                            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`); 
                             ui.setBoardClickable(false);
                         }
-                        // If game ended, gameLogic.endGame/endDraw (called by movePiece) handled local UI.
                     }
                 } else {
-                    // Move was invalid
                     ui.updateStatus(
                         `${player.getPlayerName(playerMakingTheMove)}: Movimiento inválido. Selecciona tu pieza y luego un espacio adyacente vacío.`
                     );
                     state.setSelectedPieceIndex(null); 
-                    ui.clearSelectedPieceHighlight(); // Ensure it's cleared
-                    // Re-enable board if it's still this player's turn (e.g. local play, or remote if P2P error)
+                    ui.clearSelectedPieceHighlight();
                     if ((!state.pvpRemoteActive || state.isMyTurnInRemote) && state.gameActive) {
                          ui.setBoardClickable(true);
                          gameLogic.showEasyModeHint?.();
                     }
                 }
-            } else if (state.board[cellIndex] === state.currentPlayer) { // change selection
+            } else if (state.board[cellIndex] === state.currentPlayer) { 
                 state.setSelectedPieceIndex(cellIndex);
-                ui.highlightSelectedPiece(cellIndex); // Highlight new selection
+                ui.highlightSelectedPiece(cellIndex); 
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Mueve la pieza seleccionada a un espacio adyacente vacío.`
                 );
-            } else { // Clicked on opponent's piece or an invalid cell not handled above
+            } else { 
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Movimiento inválido. Mueve tu pieza seleccionada a un espacio adyacente vacío.`
                 );
@@ -129,39 +114,31 @@ function handleCellClick(e) {
     }
 
     /* ----------  CLASSIC OR THREE-PIECE PLACEMENT PHASE  ---------- */
-    // This check ensures the cell is empty. If not, it's an invalid placement.
     if (clickedCell.querySelector('span')?.textContent !== '') return;
 
-    // Determine who is making the placement move
     let playerMakingTheMove = null; 
 
     if (state.pvpRemoteActive) {
-        if (!state.gamePaired || !state.isMyTurnInRemote) return; // Not my turn or not paired
+        if (!state.gamePaired || !state.isMyTurnInRemote) return;
         playerMakingTheMove = state.myEffectiveIcon;
     } else if (state.vsCPU) {
-        if (state.currentPlayer !== state.gameP1Icon) return; // CPU's turn
+        if (state.currentPlayer !== state.gameP1Icon) return; 
         playerMakingTheMove = state.gameP1Icon;
-    } else { // Local PvP
+    } else { 
         playerMakingTheMove = state.currentPlayer;
     }
 
     if (playerMakingTheMove && gameLogic.makeMove(cellIndex, playerMakingTheMove)) {
-        // Placement succeeded. gameLogic.makeMove has updated:
-        // - state.board
-        // - state.currentPlayer (to the next player via switchPlayer)
-        // - state.gamePhase (potentially to MOVING)
-        // - state.gameActive (to false if game ended)
-
+        // Placement succeeded. gameLogic.makeMove has updated states.
         if (state.pvpRemoteActive && state.gamePaired) {
             const moveData = {
                 type: 'move',
                 index: cellIndex,
-                // Send state *after* the move was processed locally
                 gamePhaseAfterMove: state.gamePhase,
-                nextPlayerIcon: state.currentPlayer // This is the player whose turn is NEXT
+                playerWhoMadeTheMoveIcon: playerMakingTheMove // Send who made the move
+                // state.currentPlayer is now the *next* player due to switchPlayer in makeMove
             }; 
 
-            // Check win/draw for the player *who made the move*
             const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board);
             if (winDetails) {
                 moveData.winner = playerMakingTheMove;
@@ -172,14 +149,11 @@ function handleCellClick(e) {
 
             peerConnection.sendPeerData(moveData);
 
-            // Transition local UI to waiting state ONLY if the game didn't end on this move
             if (!moveData.winner && !moveData.draw && state.gameActive) {
                 state.setIsMyTurnInRemote(false);
-                // state.currentPlayer is already the opponent (next player) due to switchPlayer in makeMove
                 ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
                 ui.setBoardClickable(false);
             }
-            // If game ended, gameLogic.endGame/endDraw (called by makeMove) handled local UI.
         }
     }
 }
@@ -195,9 +169,6 @@ function changeSymbolsBtnHandler() {
     }
 }
 
-/* ------------------------------------------------------------------ *
- * Public: setupEventListeners                                       *
- * ------------------------------------------------------------------ */
 export function setupEventListeners(stopCb) {
     mainStopAnyGameInProgressAndResetUICallback = stopCb;
 
