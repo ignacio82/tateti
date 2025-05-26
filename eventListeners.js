@@ -100,16 +100,22 @@ function handleCellClick(e) {
     }
 
     if (localMoveProcessed && state.pvpRemoteActive && state.gamePaired) {
-        const fullStateData = {
-            type: 'full_state_update',
-            board: [...state.board],
-            currentPlayer: state.currentPlayer,
-            gamePhase: state.gamePhase,
-            gameActive: state.gameActive,
-            winner: state.gameActive ? null : state.lastWinner,
-            draw: state.gameActive ? false : (!state.lastWinner && !state.gameActive && state.board.every(c=>c!==null)),
-        };
-        peerConnection.sendPeerData(fullStateData);
+        // Add a small delay to ensure all state updates are complete before sending
+        setTimeout(() => {
+            const fullStateData = {
+                type: 'full_state_update',
+                board: [...state.board],
+                currentPlayer: state.currentPlayer,
+                gamePhase: state.gamePhase,
+                gameActive: state.gameActive,
+                winner: state.gameActive ? null : state.lastWinner,
+                draw: state.gameActive ? false : (!state.lastWinner && !state.gameActive && state.board.every(c=>c!==null)),
+                selectedPieceIndex: state.selectedPieceIndex // Include selected piece state
+            };
+            
+            console.log('Sending full_state_update:', fullStateData); // Debug log
+            peerConnection.sendPeerData(fullStateData);
+        }, 10); // Small delay to ensure state consistency
 
         if (state.gameActive) {
             state.setIsMyTurnInRemote(false);
