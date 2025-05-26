@@ -36,19 +36,19 @@
 
     <div id="results">🦄 <span id="unicornWins">0</span> – ❤️ <span id="heartWins">0</span> – 🤝 <span id="draws">0</span></div>
 
-    <div id="qr-display-area" style="display:none;"> <div class="qr-modal-content">
+    <div id="qr-display-area" style="display:none;">
+        <div class="qr-modal-content">
             <span class="qr-modal-close-btn" id="qrModalCloseBtn" aria-label="Cerrar">&times;</span>
             <canvas id="qr-code-canvas" style="border: 1px solid var(--pink-light); border-radius: 8px;"></canvas>
-            <button id="copyHostIdBtn" class="std copy-id-btn" title="Click to copy Host ID">Copy Host ID</button>
-            </div>
+            <button id="copyHostIdBtn" class="std copy-id-btn" title="Click to copy Game Link">Copiar Enlace del Juego</button>
+        </div>
     </div>
     
     <nav id="side-menu" class="side-menu" aria-label="Opciones">
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
             <div class="mode" aria-label="Seleccionar modo">
-                <button id="pvpLocalBtn" class="std mode-btn active">Mismo Dispositivo</button>
-                <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                <button id="pvpLocalBtn" class="std mode-btn active">Clásico (Local)</button> <button id="threePieceBtn" class="std mode-btn">3 Piezas (Local)</button> <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
                 <button id="joinGameBtn" class="std mode-btn">Unirse a Juego Remoto</button>
                 <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
             </div>
@@ -60,12 +60,11 @@
                 
                 <div><label style="font-size:0.9em; color: var(--pink-dark);">Tu Icono:</label></div>
                 <div id="iconSelection" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 10px; padding: 5px;">
-                    </div>
+                </div>
                 <button id="savePlayerPrefsBtn" class="std" style="width: 90%; box-sizing: border-box;">Guardar Preferencias</button>
             </div>
             <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Dificultad CPU:</span></div>
-            <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;">
-                <button id="easyBtn" class="std difficulty-btn">Fácil</button>
+            <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;"> <button id="easyBtn" class="std difficulty-btn">Fácil</button>
                 <button id="mediumBtn" class="std difficulty-btn active">Normal</button>
                 <button id="hardBtn" class="std difficulty-btn">Difícil</button>
             </div>

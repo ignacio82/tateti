@@ -1,5 +1,5 @@
 // game.js - Main Orchestrator
-import * as ui from './ui.js'; // Now imports updateScoreboard and updateAllUIToggleButtons
+import * as ui from './ui.js';
 import * as state from './state.js';
 import * as player from './player.js';
 import * as sound from './sound.js';
@@ -12,67 +12,74 @@ import { setupEventListeners } from './eventListeners.js';
 document.addEventListener('DOMContentLoaded', () => {
     // Initial state loading
     state.setMyPlayerName(localStorage.getItem('tatetiPlayerName') || 'Jugador');
-    state.setMyPlayerIcon(localStorage.getItem('tatetiPlayerIcon') || null);
+    state.setMyPlayerIcon(localStorage.getItem('tatetiPlayerIcon') || null); // Will be null if not set
     state.setCurrentSymbolIndex(+(localStorage.getItem('currentSymbolIndex') || 0));
     
-    // Use setter functions for scores
     state.setMyWins(+localStorage.getItem('myWinsTateti') || 0);
     state.setOpponentWins(+localStorage.getItem('opponentWinsTateti') || 0);
     state.setDraws(+localStorage.getItem('drawsTateti') || 0);
     
     state.setWhoGoesFirstSetting(localStorage.getItem('whoGoesFirstSetting') || 'player1');
+    
+    // Load game variant preference
+    const savedGameVariant = localStorage.getItem('tatetiGameVariant');
+    if (savedGameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+        state.setGameVariant(state.GAME_VARIANTS.THREE_PIECE);
+    } else {
+        state.setGameVariant(state.GAME_VARIANTS.CLASSIC); // Default to classic
+    }
+    
     const initialSoundDisabled = localStorage.getItem('soundDisabled') === 'true';
     state.setSoundEnabled(!initialSoundDisabled);
     state.setPreviousGameExists((state.myWins + state.opponentWins + state.draws) > 0);
 
     // Initialize modules
     sound.setupAudio();
-    theme.initializeTheme();
-    // Initial UI state update based on loaded settings
-    ui.updateSoundToggleButton(state.soundEnabled); // Ensure button reflects loaded state
-    // ui.updateThemeToggleButton is handled by theme.initializeTheme()
+    theme.initializeTheme(); // This will call ui.updateThemeToggleButton internally
+    ui.updateSoundToggleButton(state.soundEnabled); // Ensure sound button reflects loaded state
 
-    // Set handlers/callbacks in modules that need them, now passing functions from ui.js
     gameLogic.setCpuMoveHandler(cpuMove);
-    gameLogic.setUpdateScoreboardHandler(ui.updateScoreboard); // Pass ui.updateScoreboard
-    gameLogic.setUpdateAllUITogglesHandler(ui.updateAllUIToggleButtons); // Pass ui.updateAllUIToggleButtons
+    gameLogic.setUpdateScoreboardHandler(ui.updateScoreboard);
+    gameLogic.setUpdateAllUITogglesHandler(ui.updateAllUIToggleButtons);
 
-    // This function stops any game and ensures UI reflects this.
-    // It calls ui.updateAllUIToggleButtons directly.
     function stopAnyGameInProgressAndResetUI() {
-        peerConnection.closePeerSession(); // Handles PeerJS shutdown
+        peerConnection.closePeerSession();
         state.setGameActive(false);
         state.resetRemoteState();
-        state.setVsCPU(false);
+        state.setVsCPU(false); 
+        // Game variant is NOT reset here; it's a user preference or set by mode buttons.
+        // If a full reset to classic is desired, state.setGameVariant(state.GAME_VARIANTS.CLASSIC) could be added.
         ui.hideOverlay();
         ui.hideQRCode();
-        ui.updateAllUIToggleButtons(); // Directly call the UI update function
+        ui.updateAllUIToggleButtons(); 
     }
 
-    // Initial player preferences load and event listener setup for player customization
     player.loadPlayerPreferences();
     player.setupPlayerCustomizationEventListeners(
-        ui.updateScoreboard,     // Pass ui.updateScoreboard
-        ui.updateStatus,         // Pass ui.updateStatus
+        ui.updateScoreboard,
+        ui.updateStatus,
         player.determineEffectiveIcons
     );
 
-    // Setup all other event listeners
     setupEventListeners(
-        stopAnyGameInProgressAndResetUI,
-        ui.updateScoreboard,     // Pass ui.updateScoreboard
-        ui.updateAllUIToggleButtons // Pass ui.updateAllUIToggleButtons
+        stopAnyGameInProgressAndResetUI
+        // Callbacks for ui.updateScoreboard and ui.updateAllUIToggleButtons are not passed here
+        // as eventListeners.js is expected to call them directly from ui.js if needed,
+        // or they are called by gameLogic.init() which eventListeners.js triggers.
     );
 
-    // Initial game setup based on URL or default
     function checkUrlForRoomAndJoin() {
         const urlParams = new URLSearchParams(window.location.search);
         const roomId = urlParams.get('room');
         if (roomId) {
+            // Joining a remote game defaults to classic Tic-Tac-Toe
+            state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
+            localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC); // Persist this if joining via URL
             peerConnection.initializePeerAsJoiner(roomId, stopAnyGameInProgressAndResetUI);
             window.history.replaceState({}, document.title, window.location.pathname);
         } else {
-            gameLogic.init(); // gameLogic.init will call the registered UI update handlers
+            // For a normal load, gameLogic.init() will respect the gameVariant loaded from localStorage (or default).
+            gameLogic.init(); 
         }
     }
     checkUrlForRoomAndJoin();
