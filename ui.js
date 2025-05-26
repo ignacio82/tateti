@@ -25,10 +25,10 @@ export const sideMenu = document.getElementById('side-menu');
 export const restartIcon = document.getElementById('restart-icon');
 
 // QR Modal Elements
-export const qrDisplayArea = document.getElementById('qr-display-area'); 
+export const qrDisplayArea = document.getElementById('qr-display-area');
 export const qrCodeCanvas = document.getElementById('qr-code-canvas');
-const qrModalCloseBtn = document.getElementById('qrModalCloseBtn'); 
-const copyHostIdBtn = document.getElementById('copyHostIdBtn'); 
+const qrModalCloseBtn = document.getElementById('qrModalCloseBtn');
+const copyHostIdBtn = document.getElementById('copyHostIdBtn');
 
 export const playerNameInput = document.getElementById('playerNameInput');
 export const iconSelectionDiv = document.getElementById('iconSelection');
@@ -110,7 +110,7 @@ export function launchConfetti() {
         container.style.height = '100vh';
         container.style.overflow = 'hidden';
         container.style.pointerEvents = 'none';
-        container.style.zIndex = '3000'; 
+        container.style.zIndex = '3000';
         document.body.appendChild(container);
     }
     container.innerHTML = '';
@@ -127,7 +127,7 @@ export function launchConfetti() {
         confetti.style.width = (Math.random() * 10 + 5) + 'px';
         confetti.style.height = (Math.random() * 20 + 10) + 'px';
         confetti.style.opacity = Math.random() * 0.5 + 0.5;
-        
+
         const duration = (Math.random() * 2 + 2.5).toFixed(2);
         const delay = (Math.random() * 1).toFixed(2);
 
@@ -159,20 +159,16 @@ export function updateStatus(message) {
 
 export function highlightWinner(winningCells) {
     winningCells.forEach(index => {
-        cells[index]?.classList.add('rainbow');
+        cells[index]?.classList.add('rainbow'); // Uses existing .rainbow class
     });
-    setTimeout(() => {
-        winningCells.forEach(index => {
-            cells[index]?.classList.remove('rainbow');
-        });
-    }, 2500);
+    // No need to remove here if it's for winner, or clearBoardUI will handle it
 }
 
 export function clearBoardUI() {
     cells.forEach(cell => {
         const span = cell.querySelector('span');
         if (span) span.textContent = '';
-        cell.classList.remove('rainbow', 'disabled');
+        cell.classList.remove('rainbow', 'disabled'); // Remove rainbow from all cells
         cell.style.cursor = 'pointer';
     });
     removeConfetti();
@@ -188,7 +184,8 @@ export function updateCellUI(index, symbol) {
         }
         cells[index].style.cursor = 'default';
         cells[index].classList.add('disabled');
-        
+        cells[index].classList.remove('rainbow'); // If player clicks a suggested cell, remove hint
+
         cells[index].style.animation = 'cellSelectAnim 0.2s ease-out';
         setTimeout(() => {
             if (cells[index]) cells[index].style.animation = '';
@@ -196,24 +193,45 @@ export function updateCellUI(index, symbol) {
     }
 }
 
+// --- Functions for Suggested Move Hint ---
+export function highlightSuggestedMove(index) {
+    clearSuggestedMoveHighlight(); // Clear any previous suggestion
+    if (cells[index] && cells[index].querySelector('span')?.textContent === '') { // Only highlight empty cells
+        cells[index].classList.add('rainbow'); // Use the existing .rainbow class for the hint
+    }
+}
+
+export function clearSuggestedMoveHighlight() {
+    cells.forEach(cell => {
+        // Only remove 'rainbow' if it was purely for suggestion.
+        // Winning cells might also have 'rainbow'.
+        // However, gameLogic will call clearBoardUI on new game or clearSuggestedMoveHighlight on player move.
+        // For simplicity now, just remove 'rainbow'. If winner highlight needs to persist longer
+        // independently of suggestion, this needs refinement or a different class for suggestions.
+        // For now, this will work as the hint is transient.
+        cell.classList.remove('rainbow');
+    });
+}
+// --- End Functions for Suggested Move Hint ---
+
 export function displayQRCode(gameLink) {
     if (qrDisplayArea && qrCodeCanvas && window.QRious) {
         new QRious({
             element: qrCodeCanvas,
-            value: gameLink, // The full game link is used for the QR code
-            size: 180, 
-            padding: 10, 
+            value: gameLink,
+            size: 180,
+            padding: 10,
             level: 'H',
-            foreground: '#ff1493', 
+            foreground: '#ff1493',
             background: '#fff8fb'
         });
-        
+
         if (copyHostIdBtn) {
-            copyHostIdBtn.textContent = "Copiar Enlace del Juego"; // Update button text
-            copyHostIdBtn.dataset.gameLink = gameLink; // Store the full game link to be copied
-            copyHostIdBtn.classList.remove('copied'); // Ensure "copied" state is reset
+            copyHostIdBtn.textContent = "Copiar Enlace del Juego";
+            copyHostIdBtn.dataset.gameLink = gameLink;
+            copyHostIdBtn.classList.remove('copied');
         }
-        
+
         qrDisplayArea.classList.add('modal');
         qrDisplayArea.style.display = 'flex';
 
@@ -233,7 +251,7 @@ export function hideQRCode() {
         qrDisplayArea.classList.remove('modal');
     }
     if (copyHostIdBtn) {
-        copyHostIdBtn.textContent = "Copiar Enlace del Juego"; // Reset default text
+        copyHostIdBtn.textContent = "Copiar Enlace del Juego";
         copyHostIdBtn.classList.remove('copied');
     }
 }
@@ -322,17 +340,17 @@ if (qrDisplayArea) {
 
 if (copyHostIdBtn) {
     copyHostIdBtn.addEventListener('click', function() {
-        const gameLinkToCopy = this.dataset.gameLink; // Get the full game link
+        const gameLinkToCopy = this.dataset.gameLink;
         if (gameLinkToCopy && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
             navigator.clipboard.writeText(gameLinkToCopy)
                 .then(() => {
                     const originalText = this.textContent;
-                    this.textContent = '¡Enlace Copiado!'; // "Link Copied!"
-                    this.classList.add('copied'); 
+                    this.textContent = '¡Enlace Copiado!';
+                    this.classList.add('copied');
                     setTimeout(() => {
-                        this.textContent = originalText; 
-                        this.classList.remove('copied'); 
-                    }, 2000); 
+                        this.textContent = originalText;
+                        this.classList.remove('copied');
+                    }, 2000);
                 })
                 .catch(err => {
                     console.error('Error al copiar enlace al portapapeles:', err);

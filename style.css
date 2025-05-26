@@ -5,6 +5,7 @@
     --pink-dark:  #ff1493;
     --pink-extra: #ffe4e1;
     --radius: 12px;
+    /* --suggestion-glow: #00ff00; /* This variable is no longer needed */
 }
 *{box-sizing:border-box;}
 body{
@@ -26,11 +27,16 @@ h1{margin:.1em 0 .4em;font-size:clamp(2.2rem,4vw+0.5rem,3.5rem);text-shadow:2px 
     box-shadow:0 6px 18px rgba(0,0,0,.25);user-select:none;
     transition:border-color .3s,box-shadow .3s;
 }
-.cell{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:clamp(2rem,6vw,4rem);background:var(--pink-extra);border:2px solid #ffb6c1;border-radius:var(--radius);cursor:pointer;transition:background .15s ease;position:relative;overflow:hidden;}
+.cell{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:clamp(2rem,6vw,4rem);background:var(--pink-extra);border:2px solid #ffb6c1;border-radius:var(--radius);cursor:pointer;transition:background .15s ease, border-color .3s ease, box-shadow .3s ease;position:relative;overflow:hidden;}
 .cell:hover:not(.disabled){background:var(--pink-light);}
 .cell.disabled{cursor:default;opacity:.7;}
+
+/* .cell.rainbow is used for winning cells AND now for suggested moves */
 .cell.rainbow::after{content:"";position:absolute;inset:0;background:linear-gradient(45deg,red,orange,yellow,green,blue,indigo,violet,red);background-size:400% 400%;animation:rb 2s linear infinite;opacity:.7;z-index:0;}
 .cell span{position:relative;z-index:1;}
+
+/* Removed .cell.suggested-move styles as we are using .cell.rainbow for hints */
+
 @keyframes rb{0%{background-position:0 50%}100%{background-position:100% 50%}}
 @keyframes cellSelectAnim{0%{transform:scale(.9)}100%{transform:scale(1)}}
 
@@ -67,7 +73,7 @@ button.std.active{outline:3px solid var(--pink-dark);filter:brightness(.88);box-
 #restartBtn{display:none;}
 
 /* Confetti  */
-.confetti{position:fixed;border-radius:4px;pointer-events:none;z-index:3000;} 
+.confetti{position:fixed;border-radius:4px;pointer-events:none;z-index:3000;}
 @keyframes fall{to{transform:translateY(110vh) rotateZ(720deg);opacity:0;}}
 
 /* Draw Animation Styles */
@@ -80,6 +86,7 @@ button.std.active{outline:3px solid var(--pink-dark);filter:brightness(.88);box-
 body.dark-theme{background:#2b2b2b;color:#ffc0cb;}
 body.dark-theme #game{background:#3d3d3d;border-color:var(--pink-dark);}
 body.dark-theme .cell{background:#4a4a4a;border-color:#5a5a5a;color:#fff;}
+/* body.dark-theme .cell.suggested-move - removed as we use .rainbow */
 body.dark-theme #results{background:#3d3d3d;border-color:var(--pink-dark);color:#fff;}
 body.dark-theme .side-menu{background:#3d3d3d;}
 body.dark-theme .side-menu .controls-group>div>span{color:var(--pink-light);}
@@ -87,46 +94,46 @@ body.dark-theme .icon-btn{color:var(--pink-light);}
 
 /* ------------ QR MODAL ------------ */
 #qr-display-area.modal {
-    position: fixed; 
-    z-index: 2000; 
+    position: fixed;
+    z-index: 2000;
     left: 0;
     top: 0;
-    width: 100%; 
-    height: 100%; 
-    overflow: auto; 
-    background-color: rgba(0,0,0,0.6); 
-    display: none; 
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.6);
+    display: none;
     justify-content: center;
     align-items: center;
     padding: 20px;
 }
 
 .qr-modal-content {
-    background-color: #fff8fb; 
+    background-color: #fff8fb;
     margin: auto;
-    padding: 20px; /* Adjusted padding */
-    border: 1px solid var(--pink-light); 
-    border-radius: 12px; 
-    box-shadow: 0 5px 15px rgba(0,0,0,0.25); 
-    max-width: 280px; /* Adjusted max-width for a more compact modal */
+    padding: 20px;
+    border: 1px solid var(--pink-light);
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.25);
+    max-width: 280px;
     text-align: center;
-    position: relative; 
+    position: relative;
 }
 
 .qr-modal-close-btn {
     color: var(--pink-dark);
     position: absolute;
-    top: 8px;  
-    right: 12px; 
-    font-size: 32px; 
+    top: 8px;
+    right: 12px;
+    font-size: 32px;
     font-weight: bold;
-    line-height: 1; 
+    line-height: 1;
     transition: color 0.2s;
 }
 
 .qr-modal-close-btn:hover,
 .qr-modal-close-btn:focus {
-    color: #c7006a; 
+    color: #c7006a;
     text-decoration: none;
     cursor: pointer;
 }
@@ -134,8 +141,8 @@ body.dark-theme .icon-btn{color:var(--pink-light);}
 #qr-display-area #qr-code-canvas {
     border: 1px solid var(--pink-light);
     border-radius: 8px;
-    display: block; 
-    margin: 10px auto 15px auto; /* Center and add margin bottom */
+    display: block;
+    margin: 10px auto 15px auto;
 }
 
 /* Styles for the new Copy Host ID button */
@@ -143,45 +150,43 @@ body.dark-theme .icon-btn{color:var(--pink-light);}
     display: block;
     width: 100%;
     padding: 10px;
-    margin-top: 10px; /* Spacing from QR code */
+    margin-top: 10px;
     font-size: 0.9em;
-    word-break: break-all; /* In case ID is very long and needs to wrap */
+    word-break: break-all;
     line-height: 1.3;
-    /* Using existing .std button styles as a base by adding class 'std' to the button */
 }
 
 .copy-id-btn.copied {
-    background-color: #4CAF50; /* Green background for feedback */
-    filter: brightness(1); /* Reset any brightness filter from .std:hover */
+    background-color: #4CAF50;
+    filter: brightness(1);
 }
 
 
 /* Dark theme adjustments for QR Modal */
 body.dark-theme #qr-display-area.modal .qr-modal-content {
-    background-color: #3d3d3d; 
-    border-color: var(--pink-dark); 
+    background-color: #3d3d3d;
+    border-color: var(--pink-dark);
 }
 
 body.dark-theme #qr-display-area.modal #qr-code-canvas {
-    border-color: #5a5a5a; 
+    border-color: #5a5a5a;
 }
 
 body.dark-theme #qr-display-area.modal .qr-modal-close-btn {
-    color: var(--pink-light); 
+    color: var(--pink-light);
 }
 body.dark-theme #qr-display-area.modal .qr-modal-close-btn:hover,
 body.dark-theme #qr-display-area.modal .qr-modal-close-btn:focus {
-    color: #ffc0cb; 
+    color: #ffc0cb;
 }
 
 /* Dark theme for copy button */
 body.dark-theme .copy-id-btn {
     /* .std dark theme styles should apply if it has .std */
-    /* If specific overrides are needed for .copy-id-btn in dark mode */
 }
 body.dark-theme .copy-id-btn.copied {
-    background-color: #66bb6a; /* Lighter green for dark theme */
-    color: #000; /* Dark text on light green */
+    background-color: #66bb6a;
+    color: #000;
 }
 
 
@@ -194,14 +199,14 @@ body.dark-theme .copy-id-btn.copied {
     #menu-toggle{font-size:2rem;}
 
     .qr-modal-content {
-        max-width: 90vw; /* Allow modal to be wider on small screens */
+        max-width: 90vw;
         padding: 15px;
     }
     #qr-display-area #qr-code-canvas {
-         margin: 10px auto; /* Adjust margin if needed */
+         margin: 10px auto;
     }
     .copy-id-btn {
-        font-size: 0.85em; /* Slightly smaller font on mobile for the button */
+        font-size: 0.85em;
         padding: 8px;
     }
 }
