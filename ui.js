@@ -82,14 +82,16 @@ export function setBoardClickable(clickable) {
 
     // Determine if the current cell contains a piece that the current player can move.
     // This is relevant only in 3-Pieces mode, during the MOVING phase.
-    // In remote games, state.isMyTurnInRemote is the ultimate check for "my" turn.
-    // state.currentPlayer should align with state.myEffectiveIcon if it is my turn.
     let isMyMovablePiece = false;
     if (clickable && 
         state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
         state.gamePhase === state.GAME_PHASES.MOVING) {
+        
         if (state.pvpRemoteActive) {
-            isMyMovablePiece = symbolInCell === state.myEffectiveIcon && state.isMyTurnInRemote;
+            // For remote games, check if this piece belongs to my effective icon
+            // AND if it's currently my turn (either based on isMyTurnInRemote OR currentPlayer matching myEffectiveIcon)
+            const isMyTurn = state.isMyTurnInRemote || (state.currentPlayer === state.myEffectiveIcon);
+            isMyMovablePiece = symbolInCell === state.myEffectiveIcon && isMyTurn;
         } else { // Local or vs CPU game
             isMyMovablePiece = symbolInCell === state.currentPlayer;
         }
