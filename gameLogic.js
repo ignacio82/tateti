@@ -11,6 +11,7 @@ import { calculateBestMove,
          cpuMove, // This will be used via cpuMoveHandler
          cpuMoveThreePiece, // This will be used via cpuMoveHandler
          calculateBestSlideForHint } from './cpu.js';
+import * as peerConnection from './peerConnection.js'; // Added for sendPeerData
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 1. Delegates that game.js can override                  │
@@ -172,16 +173,16 @@ export function init() {
     if (window.peerJsMultiplayer?.close) {
       window.peerJsMultiplayer.close();
     }
-    state.setPvpRemoteActive(false); 
+    state.setPvpRemoteActive(false);
     state.setGamePaired(false);
   }
 
   state.setBoard(Array(9).fill(null));
-  state.setGameActive(false); 
-  player.determineEffectiveIcons(); 
+  state.setGameActive(false);
+  player.determineEffectiveIcons();
 
   if (state.pvpRemoteActive && state.gamePaired) {
-    state.setCurrentPlayer(state.gameP1Icon); 
+    state.setCurrentPlayer(state.gameP1Icon);
     state.setIsMyTurnInRemote(
       state.currentPlayer === state.myEffectiveIcon
     );
@@ -191,24 +192,24 @@ export function init() {
         : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`
     );
     ui.setBoardClickable(state.isMyTurnInRemote);
-    state.setGameActive(true); 
+    state.setGameActive(true);
   } else if (state.pvpRemoteActive && !state.gamePaired) {
     ui.setBoardClickable(false);
-    state.setGameActive(false); 
+    state.setGameActive(false);
   } else {
-    state.setGameActive(true); 
-    let startPlayer = state.gameP1Icon; 
+    state.setGameActive(true);
+    let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
       startPlayer = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
     } else if (
       state.whoGoesFirstSetting === 'loser' &&
       state.previousGameExists &&
-      state.lastWinner !== null 
+      state.lastWinner !== null
     ) {
       startPlayer =
-        state.lastWinner === state.gameP1Icon 
-          ? state.gameP2Icon                  
-          : state.gameP1Icon;                 
+        state.lastWinner === state.gameP1Icon
+          ? state.gameP2Icon
+          : state.gameP1Icon;
     } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner === null) {
       startPlayer = state.gameP1Icon;
     }
@@ -217,27 +218,27 @@ export function init() {
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
       const placedCount = state.board.filter(
         s => s === startPlayer
-      ).length; 
+      ).length;
       ui.updateStatus(
         `${player.getPlayerName(startPlayer)}: Coloca tu pieza (${placedCount + 1}/3).`
       );
-    } else { 
+    } else {
       ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) { 
+    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) {
       ui.setBoardClickable(false);
       setTimeout(async () => {
-        if (state.gameActive) await cpuMoveHandler(); 
+        if (state.gameActive) await cpuMoveHandler();
       }, 700 + Math.random() * 300);
-    } else { 
+    } else {
       ui.setBoardClickable(true);
       showEasyModeHint();
     }
   }
 
-  updateAllUITogglesHandler(); 
-  updateScoreboardHandler();   
+  updateAllUITogglesHandler();
+  updateScoreboardHandler();
 
   if (
     state.gameActive &&
@@ -261,14 +262,14 @@ export function init() {
    ╰──────────────────────────────────────────────────────────╯ */
 export function makeMove(idx, sym) {
   if (state.board[idx] != null || !state.gameActive) return false;
-  
+
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
     state.gamePhase === state.GAME_PHASES.PLACING
   ) {
     const tokensOnBoardBySymbol = state.board.filter(s => s === sym).length;
     if (tokensOnBoardBySymbol >= state.MAX_PIECES_PER_PLAYER) {
-        return false; 
+        return false;
     }
   }
 
@@ -284,7 +285,7 @@ export function makeMove(idx, sym) {
   // Check for phase transition in THREE_PIECE mode
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
-    state.gamePhase === state.GAME_PHASES.PLACING 
+    state.gamePhase === state.GAME_PHASES.PLACING
   ) {
     // MODIFIED/NEW ROBUST WAY: Check total pieces on board to transition phase
     const totalPiecesOnBoard = newBoard.filter(piece => piece !== null).length;
@@ -292,18 +293,18 @@ export function makeMove(idx, sym) {
     if (totalPiecesOnBoard === state.MAX_PIECES_PER_PLAYER * 2) { // e.g., 3 * 2 = 6 pieces
       state.setGamePhase(state.GAME_PHASES.MOVING);
     }
-  } else if (checkDraw(newBoard)) { 
+  } else if (checkDraw(newBoard)) {
     endDraw();
     return true;
   }
 
-  switchPlayer(); 
+  switchPlayer();
   updateAllUITogglesHandler();
 
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
     setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) { 
+  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
     ui.setBoardClickable(true);
     showEasyModeHint();
   }
@@ -332,22 +333,22 @@ export function movePiece(fromIdx, toIdx, sym) {
   newBoard[fromIdx] = null;
   state.setBoard(newBoard);
   ui.updateCellUI(toIdx, sym);
-  ui.updateCellUI(fromIdx, null); 
+  ui.updateCellUI(fromIdx, null);
   sound.playSound('move');
-  state.setSelectedPieceIndex(null); 
-  ui.clearSelectedPieceHighlight();  
+  state.setSelectedPieceIndex(null);
+  ui.clearSelectedPieceHighlight();
 
   const winCombo = checkWin(sym, newBoard);
   if (winCombo) { endGame(sym, winCombo); return true; }
-  if (checkDraw(newBoard)) { endDraw(); return true; } 
+  if (checkDraw(newBoard)) { endDraw(); return true; }
 
-  switchPlayer(); 
+  switchPlayer();
   updateAllUITogglesHandler();
 
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
     setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) { 
+  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
     ui.setBoardClickable(true);
     showEasyModeHint();
   }
@@ -360,10 +361,10 @@ export function movePiece(fromIdx, toIdx, sym) {
    ╰──────────────────────────────────────────────────────────╯ */
 export function endGame(winnerSym, winningCells) {
   state.setGameActive(false);
-  state.setGamePhase(state.GAME_PHASES.GAME_OVER); 
+  state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false);
   ui.clearSuggestedMoveHighlight();
-  ui.clearSelectedPieceHighlight(); 
+  ui.clearSelectedPieceHighlight();
   ui.launchConfetti();
   ui.highlightWinner(winningCells);
   sound.playSound('win');
@@ -372,24 +373,31 @@ export function endGame(winnerSym, winningCells) {
   state.setLastWinner(winnerSym);
   state.setPreviousGameExists(true);
 
-  if (state.pvpRemoteActive || state.vsCPU) { 
+  if (state.pvpRemoteActive || state.vsCPU) {
     if (winnerSym === state.myEffectiveIcon) state.incrementMyWins();
     else state.incrementOpponentWins();
-  } else { 
-    if (winnerSym === state.gameP1Icon) state.incrementMyWins(); 
-    else state.incrementOpponentWins(); 
+  } else {
+    if (winnerSym === state.gameP1Icon) state.incrementMyWins();
+    else state.incrementOpponentWins();
   }
 
   localStorage.setItem('myWinsTateti', state.myWins.toString());
   localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
   updateScoreboardHandler();
 
-  setTimeout(init, state.AUTO_RESTART_DELAY_WIN); 
+  // MODIFICATION FOR BUG 1: Synchronised restarts
+  if (state.pvpRemoteActive) {
+    // Ask the opponent to start a fresh game; local init will be triggered by restart_ack
+    peerConnection.sendPeerData({ type: 'restart_request' });
+    ui.showOverlay('Solicitando reinicio al oponente...'); // Optional: UX message
+  } else {
+    setTimeout(init, state.AUTO_RESTART_DELAY_WIN); // Unchanged for solo/CPU play
+  }
 }
 
 export function endDraw() {
   state.setGameActive(false);
-  state.setGamePhase(state.GAME_PHASES.GAME_OVER); 
+  state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false);
   ui.clearSuggestedMoveHighlight();
   ui.clearSelectedPieceHighlight();
@@ -398,10 +406,17 @@ export function endDraw() {
   ui.updateStatus('¡EMPATE!');
 
   state.incrementDraws();
-  state.setLastWinner(null); 
+  state.setLastWinner(null);
   state.setPreviousGameExists(true);
   localStorage.setItem('drawsTateti', state.draws.toString());
   updateScoreboardHandler();
 
-  setTimeout(init, state.AUTO_RESTART_DELAY_DRAW); 
+  // MODIFICATION FOR BUG 1: Synchronised restarts
+  if (state.pvpRemoteActive) {
+    // Ask the opponent to start a fresh game; local init will be triggered by restart_ack
+    peerConnection.sendPeerData({ type: 'restart_request' });
+    ui.showOverlay('Solicitando reinicio al oponente...'); // Optional: UX message
+  } else {
+    setTimeout(init, state.AUTO_RESTART_DELAY_DRAW); // Unchanged for solo/CPU play
+  }
 }
