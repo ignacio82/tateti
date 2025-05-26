@@ -7,6 +7,7 @@
 //      - calculateBestMove(board?, cpuIcon?, humanIcon?, difficulty?)
 //      - cpuMove()                 ← call this when it’s the CPU’s turn (Classic)
 //      - cpuMoveThreePiece()       ← call this when it’s the CPU’s turn (3 Piezas)
+//      - calculateBestSlideForHint(board, humanIcon, cpuIcon) ← For 3 Piezas hint
 //
 //  NOTE: gameLogic.makeMove() / gameLogic.movePiece() already flip the player
 //  turn, check win/draw and updates state. DO NOT call gameLogic.switchPlayer()
@@ -82,21 +83,29 @@ function randomSlide(board, sym) {
 
 /* ─────────── 3 PIEZAS: minimax (sliding phase) ──────────── */
 
-function minimaxSlide(board, depth, isMax, cpuIcon, humanIcon, alpha, beta) {
-  if (gameLogic.checkWin(cpuIcon, board))   return { score: 10 - depth };
-  if (gameLogic.checkWin(humanIcon, board)) return { score: -10 + depth };
-  if (depth >= 4) return { score: 0 }; // Depth limit for sliding phase
+function minimaxSlide(board, depth, isMax, playerToOptimizeIcon, otherPlayerIcon, alpha, beta, isForHint = false) {
+  // Check for terminal states
+  // If it's for a hint, we are optimizing for playerToOptimizeIcon (human)
+  // If it's for CPU move, we are optimizing for playerToOptimizeIcon (CPU)
+  const winCheckOptimize = gameLogic.checkWin(playerToOptimizeIcon, board);
+  const winCheckOther = gameLogic.checkWin(otherPlayerIcon, board);
 
-  const legalSlides = enumerateSlides(board, isMax ? cpuIcon : humanIcon);
-  if (legalSlides.length === 0) return { score: 0 }; // No moves, draw-like state for this path
+  if (winCheckOptimize) return { score: 10 - depth };
+  if (winCheckOther) return { score: -10 + depth };
+
+  if (depth >= 4) return { score: 0 }; // Depth limit
+
+  const currentPlayerForTurn = isMax ? playerToOptimizeIcon : otherPlayerIcon;
+  const legalSlides = enumerateSlides(board, currentPlayerForTurn);
+  if (legalSlides.length === 0) return { score: 0 }; // No moves, draw-like state
 
   let bestMove = null;
 
-  if (isMax) {
+  if (isMax) { // Maximizing for playerToOptimizeIcon
     let bestScore = -Infinity;
     for (const move of legalSlides) {
-      const newBoard = simulateSlide(board, move, cpuIcon);
-      const { score } = minimaxSlide(newBoard, depth + 1, false, cpuIcon, humanIcon, alpha, beta);
+      const newBoard = simulateSlide(board, move, currentPlayerForTurn);
+      const { score } = minimaxSlide(newBoard, depth + 1, false, playerToOptimizeIcon, otherPlayerIcon, alpha, beta, isForHint);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -105,14 +114,14 @@ function minimaxSlide(board, depth, isMax, cpuIcon, humanIcon, alpha, beta) {
       if (beta <= alpha) break;
     }
     return { score: bestScore, move: bestMove };
-  } else {
+  } else { // Minimizing for playerToOptimizeIcon (i.e., otherPlayerIcon is making their best move)
     let bestScore = Infinity;
     for (const move of legalSlides) {
-      const newBoard = simulateSlide(board, move, humanIcon);
-      const { score } = minimaxSlide(newBoard, depth + 1, true, cpuIcon, humanIcon, alpha, beta);
+      const newBoard = simulateSlide(board, move, currentPlayerForTurn);
+      const { score } = minimaxSlide(newBoard, depth + 1, true, playerToOptimizeIcon, otherPlayerIcon, alpha, beta, isForHint);
       if (score < bestScore) {
         bestScore = score;
-        bestMove = move; // Not strictly needed for min player's best move, but good for symmetry
+        bestMove = move;
       }
       beta = Math.min(beta, score);
       if (beta <= alpha) break;
@@ -150,30 +159,38 @@ function minimax(board, depth, isMax, cpuIcon, humanIcon) {
 
 export function calculateBestMove(
   board      = state.board,
-  cpuIcon    = state.gameP2Icon,
-  humanIcon  = state.gameP1Icon,
-  difficulty = state.difficulty
+  cpuIcon    = state.gameP2Icon, // Actually playerToOptimize
+  humanIcon  = state.gameP1Icon, // Actually otherPlayer
+  difficulty = state.difficulty // This difficulty is for CPU's move, not hint quality
 ) {
+  // When used for hints, cpuIcon is human, humanIcon is CPU.
+  // The 'difficulty' param here refers to the quality of the move calculation.
+  // For hints, we usually want a 'hard' quality calculation.
   if (!cpuIcon || !humanIcon) {
-    console.error('CPU or human icon undefined in calculateBestMove', { cpuIcon, humanIcon });
+    console.error('Player icons undefined in calculateBestMove', { cpuIcon, humanIcon });
     return randomMove(board);
   }
   if (emptySquares(board).length === 0) return -1;
 
-  switch (difficulty) {
+  // For hints, we override difficulty to 'hard' to give a good suggestion.
+  // The actual CPU opponent difficulty is state.difficulty.
+  const calculationDifficulty = difficulty === 'hint' ? 'hard' : difficulty;
+
+  switch (calculationDifficulty) {
     case 'easy':
       return randomMove(board);
 
     case 'normal': {
-      const win   = findTwoInARow(board, cpuIcon);
+      const win   = findTwoInARow(board, cpuIcon); // win for playerToOptimize
       if (win !== -1) return win;
-      const block = findTwoInARow(board, humanIcon);
+      const block = findTwoInARow(board, humanIcon); // block for otherPlayer
       if (block !== -1) return block;
       return randomMove(board);
     }
 
     case 'hard':
     default: {
+      // cpuIcon is the maximizing player in minimax
       const { index } = minimax([...board], 0, true, cpuIcon, humanIcon);
       return index !== -1 ? index : randomMove(board);
     }
@@ -242,11 +259,10 @@ export async function cpuMoveThreePiece() {
         break;
 
       case 'normal': {
-        // 1. Check for winning slide
-        const winningSlides = enumerateSlides(state.board, cpuIcon);
-        for (const slide of winningSlides) {
-          const nextBoard = simulateSlide(state.board, slide, cpuIcon);
-          if (gameLogic.checkWin(cpuIcon, nextBoard)) {
+        // 1. Check for winning slide for CPU
+        const winningSlidesCPU = enumerateSlides(state.board, cpuIcon);
+        for (const slide of winningSlidesCPU) {
+          if (gameLogic.checkWin(cpuIcon, simulateSlide(state.board, slide, cpuIcon))) {
             bestSlide = slide;
             break;
           }
@@ -254,44 +270,23 @@ export async function cpuMoveThreePiece() {
         if (bestSlide) break;
 
         // 2. Check for blocking opponent's winning slide
-        const opponentWinningSlides = enumerateSlides(state.board, humanIcon);
-        let blockMove = null;
-        for (const oppSlide of opponentWinningSlides) {
-          const oppNextBoard = simulateSlide(state.board, oppSlide, humanIcon);
-          if (gameLogic.checkWin(humanIcon, oppNextBoard)) {
-            // Can the CPU move to the square the opponent wants to move to?
-            const potentialBlocks = enumerateSlides(state.board, cpuIcon);
-            for (const cpuPotentialSlide of potentialBlocks) {
-              if (cpuPotentialSlide.to === oppSlide.to) {
-                blockMove = cpuPotentialSlide;
+        const winningSlidesHuman = enumerateSlides(state.board, humanIcon);
+        for (const humanSlide of winningSlidesHuman) {
+          if (gameLogic.checkWin(humanIcon, simulateSlide(state.board, humanSlide, humanIcon))) {
+            // Can CPU block this humanSlide?
+            // Try to move to the 'to' square of human's winning slide
+            const cpuBlockSlides = enumerateSlides(state.board, cpuIcon);
+            for (const cpuPotentialBlock of cpuBlockSlides) {
+              if (cpuPotentialBlock.to === humanSlide.to) {
+                bestSlide = cpuPotentialBlock;
                 break;
               }
             }
-            if (blockMove) break;
-            // If not directly blocking the 'to' square, try to move the piece the opponent needs
-            // This is more complex as it requires checking if CPU *can* move that piece
-            // For now, we prioritize moving *any* piece to block the destination.
-            // A more advanced block would be to ensure *our* piece that can move to oppSlide.to
-            // is not the one the opponent would have moved *from* to win.
+            if (bestSlide) break;
           }
         }
-         if (blockMove) {
-            bestSlide = blockMove;
-            break;
-        }
-
-        // If no direct block by occupying the 'to' square,
-        // check if any of OUR pieces can move to prevent the opponent's win.
-        // This is tricky because the opponent might have multiple pieces to move.
-        // The most reliable block is to take the square they need for the win.
-        // Iterate through all CPU's possible moves. For each move, simulate it.
-        // Then, check if the *opponent* can still win on their *next* turn.
-        // If a CPU move prevents *all* immediate opponent wins, that's a good block.
-        // This is effectively a one-ply lookahead for blocking.
-
-        // Simplified: If CPU can move to the square the opponent would use to win, do it.
-        // (already covered by iterating through `winningSlides` for opponent and checking if `cpuPotentialSlide.to === oppSlide.to`)
-
+        if (bestSlide) break;
+        
         // 3. Random slide
         bestSlide = randomSlide(state.board, cpuIcon);
         break;
@@ -301,7 +296,7 @@ export async function cpuMoveThreePiece() {
       default: {
         const { move } = minimaxSlide([...state.board], 0, true, cpuIcon, humanIcon, -Infinity, Infinity);
         bestSlide = move;
-        if (!bestSlide) { // Fallback if minimax returns no move (e.g. no legal slides)
+        if (!bestSlide && enumerateSlides(state.board, cpuIcon).length > 0) { // Fallback if minimax returns no move but moves exist
             bestSlide = randomSlide(state.board, cpuIcon);
         }
         break;
@@ -311,11 +306,6 @@ export async function cpuMoveThreePiece() {
     if (bestSlide) {
       gameLogic.movePiece(bestSlide.from, bestSlide.to, cpuIcon);
     } else {
-      // No legal slides for CPU, which might mean a draw if human also has no moves.
-      // gameLogic.checkDraw should handle this when the turn flips.
-      // If it's CPU's turn and it has no moves, it's a stalemate from CPU's side.
-      // The game should end in a draw if the opponent also cannot move.
-      // gameLogic.endDraw() should be called by gameLogic if applicable.
       console.warn("CPU has no legal slides in 3 Piezas moving phase.");
        if (!gameLogic.hasValidMoves(cpuIcon, state.board) && !gameLogic.hasValidMoves(humanIcon, state.board)) {
          gameLogic.endDraw();
@@ -323,7 +313,6 @@ export async function cpuMoveThreePiece() {
     }
   }
 
-  // If the game is still active and it's now the human's turn, unlock the board.
   if (state.gameActive && state.currentPlayer === humanIcon) {
     ui.setBoardClickable(true);
     if (state.gamePhase === state.GAME_PHASES.PLACING) {
@@ -332,6 +321,24 @@ export async function cpuMoveThreePiece() {
     } else if (state.gamePhase === state.GAME_PHASES.MOVING) {
       ui.updateStatus(`${player.getPlayerName(humanIcon)}: Selecciona tu pieza para mover.`);
     }
-    // No easy mode hint for 3 Piezas for now
+    gameLogic.showEasyModeHint?.(); // Call hint for human's turn
   }
+}
+
+/**
+ * Calculates the best slide for a hint in 3 Piezas mode.
+ * It pretends the human is the maximizing player.
+ * @param {Array} board - The current game board.
+ * @param {string} humanIcon - The icon of the human player.
+ * @param {string} cpuIcon - The icon of the CPU player.
+ * @returns {object|null} - The best slide {from, to} or null if no slide.
+ */
+export function calculateBestSlideForHint(board, humanIcon, cpuIcon) {
+  if (!humanIcon || !cpuIcon) {
+    console.error('Icons undefined for hint calculation', {humanIcon, cpuIcon});
+    return null;
+  }
+  // We want to find the best move for humanIcon (isMax=true)
+  const { move } = minimaxSlide([...board], 0, true, humanIcon, cpuIcon, -Infinity, Infinity, true);
+  return move; // move can be null if no legal slides or no good move found by minimax
 }

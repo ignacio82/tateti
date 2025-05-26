@@ -7,20 +7,12 @@ import * as state   from './state.js';
 import * as ui      from './ui.js';
 import * as player  from './player.js';
 import * as sound   from './sound.js';
-import { calculateBestMove, cpuMove, cpuMoveThreePiece } from './cpu.js'; // Ensure cpuMoveThreePiece is imported
+import { calculateBestMove, cpuMove, cpuMoveThreePiece, calculateBestSlideForHint } from './cpu.js'; // Ensure cpuMoveThreePiece & calculateBestSlideForHint is imported
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 1.  Delegates that game.js can override                  │
    ╰──────────────────────────────────────────────────────────╯ */
 let cpuMoveHandler = () => console.warn('cpuMoveHandler not set');
-// The actual assignment of the handler is done in game.js using this setter.
-// It will look like:
-// import { cpuMove, cpuMoveThreePiece } from './cpu.js';
-// gameLogic.setCpuMoveHandler(() =>
-//   state.gameVariant === state.GAME_VARIANTS.THREE_PIECE
-//     ? cpuMoveThreePiece()
-//     : cpuMove()
-// );
 export const setCpuMoveHandler = h => (cpuMoveHandler = h);
 
 
@@ -36,25 +28,46 @@ export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler?.();
    │ 2.  Utility helpers                                      │
    ╰──────────────────────────────────────────────────────────╯ */
 export function showEasyModeHint() {
-  // Show a suggested move only in Classic vs-CPU Easy when it’s the human’s turn
+  ui.clearSuggestedMoveHighlight(); // Clear previous hint first
+
   if (
-    state.gameVariant === state.GAME_VARIANTS.CLASSIC &&
     state.vsCPU &&
     state.difficulty === 'easy' &&
-    state.currentPlayer === state.gameP1Icon &&
+    state.currentPlayer === state.gameP1Icon && // Human player's turn
     state.gameActive
   ) {
-    // Use hard search so the hint is genuinely good
-    const idx = calculateBestMove(
-      state.board,
-      state.gameP1Icon,            // pretend “human” is the AI
-      state.gameP2Icon,
-      'hard'
-    );
-    if (idx !== -1 && idx != null) ui.highlightSuggestedMove(idx);
-    else                           ui.clearSuggestedMoveHighlight();
-  } else {
-    ui.clearSuggestedMoveHighlight();
+    const humanIcon = state.gameP1Icon;
+    const cpuIcon = state.gameP2Icon;
+
+    if (state.gameVariant === state.GAME_VARIANTS.CLASSIC) {
+      const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint'); // Use 'hint' to signify we want a 'hard' calculation
+      if (idx !== -1 && idx != null && state.board[idx] === null) {
+        ui.highlightSuggestedMove(idx);
+      }
+    } else if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+      if (state.gamePhase === state.GAME_PHASES.PLACING) {
+        const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint');
+        if (idx !== -1 && idx != null && state.board[idx] === null) {
+          ui.highlightSuggestedMove(idx);
+        }
+      } else if (state.gamePhase === state.GAME_PHASES.MOVING) {
+        const bestSlide = calculateBestSlideForHint(state.board, humanIcon, cpuIcon);
+        if (bestSlide) {
+          if (state.selectedPieceIndex === null) {
+            // No piece selected, highlight the 'from' piece
+            if (state.board[bestSlide.from] === humanIcon) {
+                 ui.highlightSuggestedMove(bestSlide.from);
+            }
+          } else if (state.selectedPieceIndex === bestSlide.from) {
+            // Correct piece selected, highlight the 'to' destination
+             if (state.board[bestSlide.to] === null) {
+                ui.highlightSuggestedMove(bestSlide.to);
+            }
+          }
+          // If a different piece is selected than `bestSlide.from`, no "to" hint is shown for that selection.
+        }
+      }
+    }
   }
 }
 
@@ -93,15 +106,13 @@ export function checkDraw(board = state.board) {
 
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
     if (state.gamePhase === state.GAME_PHASES.MOVING) {
-      // Draw if no player has won AND the current player has no valid moves.
-      // Also check if the *other* player also has no valid moves for a true stalemate.
       const p1CanMove = hasValidMoves(state.gameP1Icon, board);
       const p2CanMove = hasValidMoves(state.gameP2Icon, board);
       return !checkWin(state.gameP1Icon, board) &&
              !checkWin(state.gameP2Icon, board) &&
              !p1CanMove && !p2CanMove;
     }
-    return false; // Draw not possible in placement phase by board alone
+    return false;
   }
 
   // Classic
@@ -120,7 +131,7 @@ export function switchPlayer() {
     state.currentPlayer === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon
   );
   state.setSelectedPieceIndex(null);
-  ui.clearSelectedPieceHighlight();
+  ui.clearSelectedPieceHighlight(); // Always clear piece selection highlight on turn switch
 
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
@@ -129,7 +140,7 @@ export function switchPlayer() {
     ui.updateStatus(
       `${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`
     );
-    if (checkDraw(state.board)) { // Check for draw after switching to the new player
+    if (checkDraw(state.board)) {
       endDraw();
       return;
     }
@@ -145,7 +156,7 @@ export function switchPlayer() {
     ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
   }
 
-  showEasyModeHint(); // hint for the new player (Classic mode only)
+  showEasyModeHint(); // Show hint for the new player if applicable
 }
 
 /* ╭──────────────────────────────────────────────────────────╮
@@ -153,7 +164,7 @@ export function switchPlayer() {
    ╰──────────────────────────────────────────────────────────╯ */
 export function init() {
   ui.removeConfetti(); ui.hideOverlay(); ui.hideQRCode();
-  ui.clearBoardUI();
+  ui.clearBoardUI(); // This also clears suggested move highlights
   state.resetGameFlowState();
 
   const hostActive = ui.hostGameBtn?.classList.contains('active');
@@ -165,13 +176,12 @@ export function init() {
   }
 
   state.setBoard(Array(9).fill(null));
-  state.setGameActive(false); // Will be set to true below if not remote waiting
+  state.setGameActive(false);
   player.determineEffectiveIcons();
 
-  // Reset player pieces for THREE_PIECE variant is handled in resetGameFlowState
 
   if (state.pvpRemoteActive && state.gamePaired) {
-    state.setCurrentPlayer(state.gameP1Icon); // P1 (host) usually starts
+    state.setCurrentPlayer(state.gameP1Icon);
     state.setIsMyTurnInRemote(state.currentPlayer === state.myEffectiveIcon);
     ui.updateStatus(
       state.isMyTurnInRemote
@@ -182,20 +192,18 @@ export function init() {
     state.setGameActive(true);
   }
   else if (state.pvpRemoteActive && !state.gamePaired) {
-    // Waiting for connection, board not clickable, game not active
     ui.setBoardClickable(false);
     state.setGameActive(false);
   }
-  else {                                   // local PvP or vs-CPU
+  else {
     state.setGameActive(true);
-
     let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
       startPlayer = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
     } else if (
       state.whoGoesFirstSetting === 'loser' &&
       state.previousGameExists &&
-      state.lastWinner !== null // Ensure there was a winner, not a draw
+      state.lastWinner !== null
     ) {
       startPlayer = state.lastWinner === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
     }
@@ -207,21 +215,19 @@ export function init() {
       ui.updateStatus(
         `${player.getPlayerName(startPlayer)}: Coloca tu pieza (${placedCount + 1}/3).`
       );
-    } else { // Classic
+    } else {
       ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) {
+    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) { // CPU starts
       ui.setBoardClickable(false);
-      ui.clearSuggestedMoveHighlight(); // Clear any previous hint
+      // ui.clearSuggestedMoveHighlight(); // Already cleared by clearBoardUI
       setTimeout(async () => {
-        if (state.gameActive) await cpuMoveHandler(); // Universal CPU call
+        if (state.gameActive) await cpuMoveHandler();
       }, 700 + Math.random() * 300);
-    } else {
+    } else { // Human starts
       ui.setBoardClickable(true);
-      if (state.gameVariant === state.GAME_VARIANTS.CLASSIC) { // Only show hint for classic
-        showEasyModeHint();
-      }
+      showEasyModeHint(); // Show hint if human starts and conditions met
     }
   }
 
@@ -244,22 +250,15 @@ export function init() {
 export function makeMove(idx, sym) {
   if (state.board[idx] !== null || !state.gameActive) return false;
 
-  ui.clearSuggestedMoveHighlight();
-  ui.clearSelectedPieceHighlight(); // Should be cleared if a move is made
+  // ui.clearSuggestedMoveHighlight(); // Done by showEasyModeHint or cell click logic in eventListeners
+  // ui.clearSelectedPieceHighlight(); // Not relevant for placement phase directly
 
-  let pieceLimitReached = false;
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
     state.gamePhase === state.GAME_PHASES.PLACING
   ) {
     const tokensOnBoard = state.board.filter(s => s === sym).length;
     if (tokensOnBoard >= state.MAX_PIECES_PER_PLAYER) {
-      // This case should ideally not be reached if UI/state prevents it,
-      // but as a safeguard:
-      console.warn(`${player.getPlayerName(sym)} trying to place more than ${state.MAX_PIECES_PER_PLAYER} pieces.`);
-      pieceLimitReached = true; // For local state, UI should reflect this.
-      // Do not proceed with move if limit is already met for *this* player.
-      // The check for transitioning to MOVING phase is after the move.
       return false;
     }
   }
@@ -267,16 +266,15 @@ export function makeMove(idx, sym) {
   const newBoard = [...state.board];
   newBoard[idx] = sym;
   state.setBoard(newBoard);
-  ui.updateCellUI(idx, sym);
+  ui.updateCellUI(idx, sym); // This also clears hints from the cell itself
   sound.playSound('move');
 
-  const winCombo = checkWin(sym, newBoard); // Check win on new board
+  const winCombo = checkWin(sym, newBoard);
   if (winCombo) {
     endGame(sym, winCombo);
     return true;
   }
 
-  // Transition to MOVING phase in THREE_PIECE if all pieces are placed
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
       state.gamePhase === state.GAME_PHASES.PLACING) {
     const p1Pieces = newBoard.filter(s => s === state.gameP1Icon).length;
@@ -284,29 +282,23 @@ export function makeMove(idx, sym) {
     if (p1Pieces === state.MAX_PIECES_PER_PLAYER &&
         p2Pieces === state.MAX_PIECES_PER_PLAYER) {
       state.setGamePhase(state.GAME_PHASES.MOVING);
-      // Status will be updated by switchPlayer or CPU move
     }
-  } else if (checkDraw(newBoard)) { // Classic draw check
+  } else if (checkDraw(newBoard)) {
     endDraw();
     return true;
   }
 
-  switchPlayer(); // This will update status for next player
+  switchPlayer();
   updateAllUITogglesHandler();
 
-  // CPU's turn logic (common for both variants after a human move)
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
-    // No hint clear here, cpuMove itself or next human turn hint will handle it
     setTimeout(async () => {
-      if (state.gameActive) await cpuMoveHandler(); // Universal CPU call
+      if (state.gameActive) await cpuMoveHandler();
     }, 700 + Math.random() * 300);
   } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
-    // Human's turn again (e.g. local PvP)
     ui.setBoardClickable(true);
-    if (state.gameVariant === state.GAME_VARIANTS.CLASSIC) {
-        showEasyModeHint();
-    }
+    showEasyModeHint(); // Hint for human's turn
   }
 
   return true;
@@ -323,13 +315,13 @@ export function movePiece(fromIdx, toIdx, sym) {
   ) return false;
 
   if (state.board[fromIdx] !== sym || state.board[toIdx] !== null) {
-      console.warn("Invalid movePiece attempt: piece not owned or target not empty.", {fromIdx, toIdx, sym, boardOwner: state.board[fromIdx], boardTarget: state.board[toIdx]});
       return false;
   }
   if (!areCellsAdjacent(fromIdx, toIdx)) {
     ui.updateStatus(`${player.getPlayerName(sym)}: Inválido. Mueve a casilla adyacente.`);
-    state.setSelectedPieceIndex(null); // Clear selection on invalid move attempt
+    state.setSelectedPieceIndex(null);
     ui.clearSelectedPieceHighlight();
+    showEasyModeHint(); // Re-evaluate hint, maybe suggest selecting a piece
     return false;
   }
 
@@ -340,8 +332,8 @@ export function movePiece(fromIdx, toIdx, sym) {
   ui.updateCellUI(toIdx, sym);
   ui.updateCellUI(fromIdx, null);
   sound.playSound('move');
-  state.setSelectedPieceIndex(null); // Clear selection after successful move
-  ui.clearSelectedPieceHighlight();
+  state.setSelectedPieceIndex(null);
+  ui.clearSelectedPieceHighlight(); // Clear after successful move
 
   const winCombo = checkWin(sym, newBoard);
   if (winCombo) {
@@ -349,29 +341,22 @@ export function movePiece(fromIdx, toIdx, sym) {
     return true;
   }
 
-  // Check for draw in THREE_PIECE moving phase (stalemate)
-  // This check is crucial: if after a move, the *next* player has no valid moves.
-  const nextPlayer = sym === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
-  if (!hasValidMoves(nextPlayer, newBoard) && !hasValidMoves(sym, newBoard)) { // Check both players for true stalemate
+  if (checkDraw(newBoard)) {
       endDraw();
       return true;
   }
 
-
-  switchPlayer(); // This updates status and currentPlayer
+  switchPlayer();
   updateAllUITogglesHandler();
 
-
-  // CPU's turn logic (common for both variants after a human move)
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
     setTimeout(async () => {
-      if (state.gameActive) await cpuMoveHandler(); // Universal CPU call
+      if (state.gameActive) await cpuMoveHandler();
     }, 700 + Math.random() * 300);
   } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
-     // Human's turn again (e.g. local PvP)
     ui.setBoardClickable(true);
-    // No hint for 3-piece mode during sliding by default
+    showEasyModeHint(); // Hint for human's turn
   }
 
   return true;
@@ -397,9 +382,9 @@ export function endGame(winnerSym, winningCells) {
   if (state.pvpRemoteActive || state.vsCPU) {
     if (winnerSym === state.myEffectiveIcon)        state.incrementMyWins();
     else if (winnerSym === state.opponentEffectiveIcon) state.incrementOpponentWins();
-  } else { // Local PvP
-    if (winnerSym === state.gameP1Icon) state.incrementMyWins(); // Player 1 on board
-    else                                 state.incrementOpponentWins(); // Player 2 on board
+  } else {
+    if (winnerSym === state.gameP1Icon) state.incrementMyWins();
+    else                                 state.incrementOpponentWins();
   }
   localStorage.setItem('myWinsTateti',      state.myWins.toString());
   localStorage.setItem('opponentWinsTateti',state.opponentWins.toString());
@@ -419,7 +404,7 @@ export function endDraw() {
   ui.updateStatus('¡EMPATE!');
 
   state.incrementDraws();
-  state.setLastWinner(null); // No winner in a draw
+  state.setLastWinner(null);
   state.setPreviousGameExists(true);
   localStorage.setItem('drawsTateti', state.draws.toString());
   updateScoreboardHandler();
