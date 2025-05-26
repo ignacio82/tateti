@@ -1,6 +1,6 @@
-// gameLogic.js
+// gameLogic.js - Fixed version with proper phase transition handling
 // ─────────────────────────────────────────────────────────────────────────────
-// Core mechanics for both Classic and “3 Piezas” variants of Ta-Te-Ti Deluxe
+// Core mechanics for both Classic and "3 Piezas" variants of Ta-Te-Ti Deluxe
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as state   from './state.js';
@@ -128,11 +128,17 @@ export function checkDraw(board = state.board) {
    │ 4. Turn switch & status prompts                         │
    ╰──────────────────────────────────────────────────────────╯ */
 export function switchPlayer() {
+  // IMPORTANT: Preserve the current game phase during player switch
+  const currentPhase = state.gamePhase;
+  
   state.setCurrentPlayer(
     state.currentPlayer === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon
   );
   state.setSelectedPieceIndex(null); 
   ui.clearSelectedPieceHighlight();
+
+  // Ensure phase is maintained (was being reset in some cases)
+  state.setGamePhase(currentPhase);
 
   let statusMessage = '';
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
@@ -165,7 +171,7 @@ export function init() {
   ui.removeConfetti();
   ui.hideOverlay();
   ui.hideQRCode();
-  ui.clearBoardUI(); // Clears board content and classes
+  ui.clearBoardUI(); 
   state.resetGameFlowState(); 
 
   state.setBoard(Array(9).fill(null));
@@ -181,7 +187,7 @@ export function init() {
         ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}`
         : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`
     );
-    ui.setBoardClickable(state.isMyTurnInRemote); // This will use the new setBoardClickable logic
+    ui.setBoardClickable(state.isMyTurnInRemote);
     state.setGameActive(true);
   } else if (state.pvpRemoteActive && !state.gamePaired) {
     console.log("gameLogic.init(): PVP Remote & NOT Paired");
@@ -224,7 +230,7 @@ export function init() {
       ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    if (state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon) { // Check if it's CPU's turn
+    if (state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon) {
       ui.setBoardClickable(false);
       setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else { 
@@ -265,18 +271,14 @@ export function makeMove(idx, sym) {
   const winCombo = checkWin(sym, newBoard);
   if (winCombo) { endGame(sym, winCombo); return true; }
 
+  // Check for phase transition BEFORE switching player
+  let phaseChanged = false;
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING ) {
     const totalPiecesOnBoard = newBoard.filter(piece => piece !== null).length;
     if (totalPiecesOnBoard === state.MAX_PIECES_PER_PLAYER * 2) { 
       state.setGamePhase(state.GAME_PHASES.MOVING);
+      phaseChanged = true;
       console.log(`makeMove: Game phase changed to MOVING.`);
-      // Additional polish, as suggested by AI:
-      // This call ensures that if the current player (who just made the move causing phase change)
-      // needs to interact immediately, or if the board appearance needs immediate update
-      // based on the new phase and current player, it happens.
-      // However, switchPlayer() will be called next and will also call setBoardClickable.
-      // This ensures the UI reflects current player's pieces correctly if they are to move again.
-      if (state.gameActive) ui.setBoardClickable(true);
     }
   } else if (checkDraw(newBoard)) { 
     endDraw();
@@ -287,21 +289,29 @@ export function makeMove(idx, sym) {
   updateAllUITogglesHandler();
 
   const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
-  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon; // Check against opponent
+  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon;
 
   if (state.gameActive) {
     if (isCPUPlaying) {
         ui.setBoardClickable(false);
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else if (isMyTurnNow) { 
-        ui.setBoardClickable(true); // Ensure this uses the new logic
+        ui.setBoardClickable(true);
     } else { 
         ui.setBoardClickable(false);
     }
   }
+  
+  // If phase changed and we're in network mode, ensure the UI reflects the new phase
+  if (phaseChanged && state.pvpRemoteActive && state.gamePaired) {
+    // Force a UI update to ensure the correct status message for MOVING phase
+    if (state.isMyTurnInRemote) {
+      ui.updateStatus(`${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`);
+    }
+  }
+  
   return true;
 }
-
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 7. Moving phase (3-Piezas MOVING)                       │
@@ -340,14 +350,14 @@ export function movePiece(fromIdx, toIdx, sym) {
   updateAllUITogglesHandler();
 
   const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
-  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon; // Check against opponent
+  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon;
 
   if (state.gameActive) {
     if (isCPUPlaying) {
         ui.setBoardClickable(false);
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else if (isMyTurnNow) {
-        ui.setBoardClickable(true); // Key call: Make board clickable for the current player
+        ui.setBoardClickable(true);
     } else { 
         ui.setBoardClickable(false);
     }
