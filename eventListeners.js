@@ -14,9 +14,13 @@ let mainStopAnyGameInProgressAndResetUICallback;
  * ------------------------------------------------------------------ */
 
 function handleCellClick(e) {
-    if (!state.gameActive && !(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING && state.selectedPieceIndex !== null)) {
-        if (!state.gameActive) return;
+    // Allow piece selection/deselection in 3-piece moving phase even if gameActive might briefly be false during transitions
+    const isThreePieceMoving = state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING;
+
+    if (!state.gameActive && !(isThreePieceMoving && state.selectedPieceIndex !== null)) {
+         if (!state.gameActive && !isThreePieceMoving) return; // Block if game is truly inactive
     }
+
 
     const clickedCell = e.target.closest('.cell');
     if (!clickedCell) return;
@@ -24,62 +28,82 @@ function handleCellClick(e) {
 
     let localMoveProcessed = false;
     let playerMakingTheMove = null;
-    let fromIndexForSlide = null; // To capture fromIndex for slide moves
-    let toIndexForSlide = null;   // To capture toIndex for slide moves
+    let fromIndexForSlide = null;
+    let toIndexForSlide = null;
 
 
     /* ----------  THREE-PIECE VARIANT : MOVING PHASE  ---------- */
-    if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
-        playerMakingTheMove = state.currentPlayer;
+    if (isThreePieceMoving) {
+        // Determine whose turn it really is, especially for remote play
+        if (state.pvpRemoteActive) {
+            if (!state.isMyTurnInRemote) return; // Not my turn
+            playerMakingTheMove = state.myEffectiveIcon;
+        } else if (state.vsCPU) {
+            if (state.currentPlayer !== state.gameP1Icon) return; // CPU's turn
+            playerMakingTheMove = state.gameP1Icon;
+        } else { // Local PVP
+            playerMakingTheMove = state.currentPlayer;
+        }
+        if (!playerMakingTheMove) return; // Should not happen if checks above are correct
+
 
         if (state.selectedPieceIndex === null) {
             if (state.board[cellIndex] === playerMakingTheMove) {
                 state.setSelectedPieceIndex(cellIndex);
+                ui.clearSuggestedMoveHighlight(); // Clear hint when selecting a piece
                 ui.highlightSelectedPiece(cellIndex);
                 ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Mueve tu pieza a un espacio adyacente vacío.`);
+                gameLogic.showEasyModeHint(); // Show hint for where to move
             } else {
-                ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Selecciona una de TUS piezas para mover.`);
+                // ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Selecciona una de TUS piezas para mover.`);
             }
         } else {
             fromIndexForSlide = state.selectedPieceIndex;
             toIndexForSlide = cellIndex;
 
-            if (toIndexForSlide === fromIndexForSlide) {
+            if (toIndexForSlide === fromIndexForSlide) { // Clicked selected piece again to deselect
                 state.setSelectedPieceIndex(null);
                 ui.clearSelectedPieceHighlight();
                 ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Selecciona una pieza para mover.`);
-            } else if (state.board[toIndexForSlide] === null) {
+                gameLogic.showEasyModeHint(); // Show hint for which piece to select
+            } else if (state.board[toIndexForSlide] === null) { // Clicked an empty cell for destination
                 ui.clearSelectedPieceHighlight();
                 if (gameLogic.movePiece(fromIndexForSlide, toIndexForSlide, playerMakingTheMove)) {
                     localMoveProcessed = true;
-                    // MODIFICATION FOR BUG 2: Send explicit slide move for 3-Pieces
+                    // BUG 2 FIX: Send explicit slide move for 3-Pieces
                     if (state.pvpRemoteActive && state.gamePaired) {
                         peerConnection.sendPeerData({
                             type : 'move_piece',
                             from : fromIndexForSlide,
                             to   : toIndexForSlide
+                            // Opponent will know who made the move (state.opponentEffectiveIcon for them)
                         });
                     }
                 } else {
-                    ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Movimiento inválido.`);
-                    state.setSelectedPieceIndex(null);
+                    ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Movimiento inválido. Intenta de nuevo.`);
+                    // Don't deselect, allow trying another destination
+                    // state.setSelectedPieceIndex(null);
+                    // ui.clearSelectedPieceHighlight(); // Keep it highlighted
                     if ((!state.pvpRemoteActive || state.isMyTurnInRemote) && state.gameActive) {
-                        ui.setBoardClickable(true); gameLogic.showEasyModeHint?.();
+                        ui.setBoardClickable(true); // Ensure board is clickable
+                        gameLogic.showEasyModeHint?.();
                     }
                 }
-            } else if (state.board[toIndexForSlide] === playerMakingTheMove) {
+            } else if (state.board[toIndexForSlide] === playerMakingTheMove) { // Clicked another of own pieces
                 state.setSelectedPieceIndex(toIndexForSlide);
+                ui.clearSelectedPieceHighlight();
                 ui.highlightSelectedPiece(toIndexForSlide);
                 ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Mueve la pieza seleccionada.`);
-            } else {
-                ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: Movimiento inválido.`);
+                gameLogic.showEasyModeHint();
+            } else { // Clicked opponent's piece or invalid cell
+                ui.updateStatus(`${player.getPlayerName(playerMakingTheMove)}: No puedes mover ahí. Intenta de nuevo.`);
             }
         }
-        if (!localMoveProcessed && state.selectedPieceIndex !== null && clickedCell.querySelector('span')?.textContent === playerMakingTheMove) return;
-        if (!localMoveProcessed && state.selectedPieceIndex === null && cellIndex !== state.selectedPieceIndex) return;
+        // Prevent fall-through if a selection/deselection happened without processing a move
+        // if (!localMoveProcessed) return; // This might be too aggressive
 
     } else { /* ----------  CLASSIC OR THREE-PIECE PLACEMENT PHASE  ---------- */
-        if (clickedCell.querySelector('span')?.textContent !== '') return;
+        if (clickedCell.querySelector('span')?.textContent !== '') return; // Cell not empty
 
         if (state.pvpRemoteActive) {
             if (!state.gamePaired || !state.isMyTurnInRemote) return;
@@ -87,11 +111,11 @@ function handleCellClick(e) {
         } else if (state.vsCPU) {
             if (state.currentPlayer !== state.gameP1Icon) return;
             playerMakingTheMove = state.gameP1Icon;
-        } else {
+        } else { // Local PvP
             playerMakingTheMove = state.currentPlayer;
         }
 
-        if (!playerMakingTheMove) return;
+        if (!playerMakingTheMove) return; // Should not happen
 
         if (gameLogic.makeMove(cellIndex, playerMakingTheMove)) {
             localMoveProcessed = true;
@@ -99,34 +123,24 @@ function handleCellClick(e) {
     }
 
     if (localMoveProcessed && state.pvpRemoteActive && state.gamePaired) {
-        // After local game logic (makeMove or movePiece) has run:
-        // - state.board is updated.
-        // - state.currentPlayer is now the *next* player.
-        // - state.gamePhase might have changed (e.g., to MOVING or GAME_OVER).
-        // - state.gameActive is false if the game ended.
-        // - state.lastWinner is set if there was a winner.
-
         const fullStateData = {
             type: 'full_state_update',
             board: [...state.board],
             currentPlayer: state.currentPlayer, // This is the player whose turn it IS NEXT
             gamePhase: state.gamePhase,
             gameActive: state.gameActive,
-            winner: null, // Determined below
-            draw: false,  // Determined below
+            winner: null,
+            draw: false,
         };
 
-        if (!state.gameActive) { // Game ended with the move made by playerMakingTheMove
-            if (state.lastWinner) { // gameLogic.endGame sets state.lastWinner
+        if (!state.gameActive) { // Game ended
+            if (state.lastWinner) {
                 fullStateData.winner = state.lastWinner;
-                fullStateData.draw = false;
             } else {
-                // If game ended and no winner, it must be a draw
                 fullStateData.draw = true;
             }
         }
 
-        console.log("eventListeners: Sending full_state_update:", JSON.parse(JSON.stringify(fullStateData)));
         peerConnection.sendPeerData(fullStateData);
 
         if (state.gameActive) { // If game continues, local player waits
@@ -134,8 +148,8 @@ function handleCellClick(e) {
             ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
             ui.setBoardClickable(false);
         }
-        // If game ended, local UI is already handled by gameLogic's endGame/endDraw
-        // and restart will be managed via restart_request/restart_ack.
+        // If game ended, local UI is handled by gameLogic.endGame/endDraw.
+        // Restart for remote games is handled by restart_request/ack flow originating from gameLogic.
     }
 }
 
@@ -145,8 +159,13 @@ function changeSymbolsBtnHandler() {
     localStorage.setItem('currentSymbolIndex', state.currentSymbolIndex.toString());
     player.determineEffectiveIcons();
     sound.playSound('move');
-    if (!state.gameActive) {
-        ui.updateStatus(`Turno del ${player.getPlayerName(state.gameP1Icon)}`);
+    if (!state.gameActive && !state.pvpRemoteActive) { // Update status only if game isn't active and not in remote mode setup
+        gameLogic.init(); // Re-initialize to reflect new default symbols if game hasn't started
+    } else if (!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
+        // If remote and paired but game not started (e.g. between games)
+        ui.updateScoreboard(); // Just update scoreboard
+    } else if (state.gameActive) {
+        ui.updateScoreboard(); // Update scoreboard during active game
     }
 }
 
@@ -171,15 +190,11 @@ export function setupEventListeners(stopCb) {
 
     /* ----------  RESTART  ---------- */
     ui.restartIcon?.addEventListener('click', () => {
-        if (state.pvpRemoteActive && state.gamePaired && state.gameActive) { // Only send if game is active
+        if (state.pvpRemoteActive && state.gamePaired) {
+            // Send restart request regardless of gameActive, peer will decide
             peerConnection.sendPeerData({ type: 'restart_request' });
-            ui.showOverlay('Solicitud de reinicio enviada...');
-        } else if (!state.gameActive && state.pvpRemoteActive && state.gamePaired) {
-            // If game is over, both players should be able to re-initiate via restart_request
-             peerConnection.sendPeerData({ type: 'restart_request' });
-             ui.showOverlay('Proponiendo nueva partida...');
-        }
-        else { // Local game or CPU game, or not paired
+            ui.showOverlay(state.gameActive ? 'Solicitud de reinicio enviada...' : 'Proponiendo nueva partida...');
+        } else {
             mainStopAnyGameInProgressAndResetUICallback?.();
             gameLogic.init();
         }
@@ -190,20 +205,20 @@ export function setupEventListeners(stopCb) {
     ui.pvpLocalBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(false);
-        state.setPvpRemoteActive(false);
+        state.setPvpRemoteActive(false); // Ensure remote is off
+        state.setGamePaired(false);     // Ensure not paired
         gameLogic.init();
     });
 
-    /* 3-Piece ON/OFF switch  */
     ui.threePieceToggle?.addEventListener('change', e => {
         const useThreePiece = e.target.checked;
         mainStopAnyGameInProgressAndResetUICallback?.();
-
         state.setGameVariant(
             useThreePiece ? state.GAME_VARIANTS.THREE_PIECE
                           : state.GAME_VARIANTS.CLASSIC
         );
         localStorage.setItem('tatetiGameVariant', state.gameVariant);
+        // VsCPU and PvpRemoteActive state should persist or be reset by mode buttons
         gameLogic.init();
     });
 
@@ -214,7 +229,8 @@ export function setupEventListeners(stopCb) {
     ui.cpuBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(true);
-        state.setPvpRemoteActive(false);
+        state.setPvpRemoteActive(false); // Ensure remote is off
+        state.setGamePaired(false);     // Ensure not paired
         gameLogic.init();
     });
 
@@ -236,7 +252,8 @@ export function setupEventListeners(stopCb) {
             state.setWhoGoesFirstSetting(e.target.id.replace('StartsBtn', ''));
             localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting);
             sound.playSound('move');
-            if (!state.gameActive || state.board.every(c => c === null)) {
+            // Re-init only if game is not active or board is clear, and not in a paired remote session
+            if ((!state.gameActive || state.board.every(c => c === null)) && !(state.pvpRemoteActive && state.gamePaired)) {
                 gameLogic.init();
             } else {
                 ui.updateAllUIToggleButtons();

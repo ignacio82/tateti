@@ -11,7 +11,8 @@ import { calculateBestMove,
          cpuMove, // This will be used via cpuMoveHandler
          cpuMoveThreePiece, // This will be used via cpuMoveHandler
          calculateBestSlideForHint } from './cpu.js';
-import * as peerConnection from './peerConnection.js'; // Added for sendPeerData
+// Import peerConnection to send data directly from gameLogic if necessary (for restart_request)
+import * as peerConnection from './peerConnection.js';
 
 /* ╭──────────────────────────────────────────────────────────╮
    │ 1. Delegates that game.js can override                  │
@@ -169,19 +170,22 @@ export function init() {
   state.resetGameFlowState(); // Resets gamePhase to PLACING among other things
 
   const hostActive = ui.hostGameBtn?.classList.contains('active');
-  if (state.pvpRemoteActive && !state.gamePaired && !hostActive) {
-    if (window.peerJsMultiplayer?.close) {
-      window.peerJsMultiplayer.close();
-    }
-    state.setPvpRemoteActive(false);
-    state.setGamePaired(false);
-  }
+  // This check might be too aggressive if we want to re-init into a paired game
+  // if (state.pvpRemoteActive && !state.gamePaired && !hostActive) {
+  //   if (window.peerJsMultiplayer?.close) {
+  //     window.peerJsMultiplayer.close();
+  //   }
+  //   state.setPvpRemoteActive(false);
+  //   state.setGamePaired(false);
+  // }
 
   state.setBoard(Array(9).fill(null));
   state.setGameActive(false);
   player.determineEffectiveIcons();
 
   if (state.pvpRemoteActive && state.gamePaired) {
+    // Who starts? For now, P1 (host) starts by convention in remote games.
+    // This could be made more sophisticated (e.g. loser starts, or synced random choice)
     state.setCurrentPlayer(state.gameP1Icon);
     state.setIsMyTurnInRemote(
       state.currentPlayer === state.myEffectiveIcon
@@ -194,9 +198,18 @@ export function init() {
     ui.setBoardClickable(state.isMyTurnInRemote);
     state.setGameActive(true);
   } else if (state.pvpRemoteActive && !state.gamePaired) {
+    // Waiting for a connection or re-connection
     ui.setBoardClickable(false);
     state.setGameActive(false);
-  } else {
+    if (state.iAmPlayer1InRemote && state.currentHostPeerId) {
+         ui.updateStatus(`Comparte el enlace o ID: ${state.currentHostPeerId}`);
+         // ui.displayQRCode was handled by initializePeerAsHost, ensure it stays if needed
+    } else if (!state.iAmPlayer1InRemote && state.currentHostPeerId){
+        ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);
+    } else {
+        ui.updateStatus("Modo Remoto: Esperando conexión.");
+    }
+  } else { // Local or CPU game
     state.setGameActive(true);
     let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
@@ -210,7 +223,7 @@ export function init() {
         state.lastWinner === state.gameP1Icon
           ? state.gameP2Icon
           : state.gameP1Icon;
-    } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner === null) {
+    } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner === null) { // Draw, P1 starts
       startPlayer = state.gameP1Icon;
     }
     state.setCurrentPlayer(startPlayer);
@@ -253,7 +266,7 @@ export function init() {
     ui.sideMenu?.classList.contains('open') &&
     !(state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote)
   ) {
-    ui.sideMenu.classList.remove('open');
+    // ui.sideMenu.classList.remove('open'); // Keep menu open if user is there.
   }
 }
 
@@ -282,32 +295,30 @@ export function makeMove(idx, sym) {
   const winCombo = checkWin(sym, newBoard);
   if (winCombo) { endGame(sym, winCombo); return true; }
 
-  // Check for phase transition in THREE_PIECE mode
   if (
     state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
     state.gamePhase === state.GAME_PHASES.PLACING
   ) {
-    // MODIFIED/NEW ROBUST WAY: Check total pieces on board to transition phase
     const totalPiecesOnBoard = newBoard.filter(piece => piece !== null).length;
-
-    if (totalPiecesOnBoard === state.MAX_PIECES_PER_PLAYER * 2) { // e.g., 3 * 2 = 6 pieces
+    if (totalPiecesOnBoard === state.MAX_PIECES_PER_PLAYER * 2) {
       state.setGamePhase(state.GAME_PHASES.MOVING);
     }
-  } else if (checkDraw(newBoard)) {
+  } else if (checkDraw(newBoard)) { // Classic draw or 3-piece draw during placement if board fills
     endDraw();
     return true;
   }
 
   switchPlayer();
-  updateAllUITogglesHandler();
+  updateAllUITogglesHandler(); // Update UI after phase potentially changes
 
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
     setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
+  } else if (state.gameActive && (!state.pvpRemoteActive || state.isMyTurnInRemote)) { // Allow clicks if local or my turn in remote
     ui.setBoardClickable(true);
     showEasyModeHint();
   }
+
 
   return true;
 }
@@ -325,6 +336,7 @@ export function movePiece(fromIdx, toIdx, sym) {
 
   if (state.board[fromIdx] !== sym || state.board[toIdx] !== null) return false;
   if (!areCellsAdjacent(fromIdx, toIdx)) {
+    // console.warn("Move rejected: cells not adjacent or same cell");
     return false;
   }
 
@@ -348,7 +360,7 @@ export function movePiece(fromIdx, toIdx, sym) {
   if (state.vsCPU && state.currentPlayer === state.gameP2Icon && state.gameActive) {
     ui.setBoardClickable(false);
     setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-  } else if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
+  } else if (state.gameActive && (!state.pvpRemoteActive || state.isMyTurnInRemote)) { // Allow clicks if local or my turn in remote
     ui.setBoardClickable(true);
     showEasyModeHint();
   }
@@ -385,14 +397,13 @@ export function endGame(winnerSym, winningCells) {
   localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
   updateScoreboardHandler();
 
-  // MODIFICATION FOR BUG 1: Synchronised restarts
-  if (state.pvpRemoteActive) {
-    // Ask the opponent to start a fresh game; local init will be triggered by restart_ack
+  if (state.pvpRemoteActive && state.gamePaired) {
     peerConnection.sendPeerData({ type: 'restart_request' });
-    ui.showOverlay('Solicitando reinicio al oponente...'); // Optional: UX message
-  } else {
-    setTimeout(init, state.AUTO_RESTART_DELAY_WIN); // Unchanged for solo/CPU play
+    // ui.showOverlay('Solicitando reinicio al oponente...'); // Overlay managed by peerConnection or UI based on context
+  } else if (!state.pvpRemoteActive) { // Only for local/CPU games
+    setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
   }
+  // For remote games, init() will be called upon receiving restart_ack
 }
 
 export function endDraw() {
@@ -411,12 +422,11 @@ export function endDraw() {
   localStorage.setItem('drawsTateti', state.draws.toString());
   updateScoreboardHandler();
 
-  // MODIFICATION FOR BUG 1: Synchronised restarts
-  if (state.pvpRemoteActive) {
-    // Ask the opponent to start a fresh game; local init will be triggered by restart_ack
+  if (state.pvpRemoteActive && state.gamePaired) {
     peerConnection.sendPeerData({ type: 'restart_request' });
-    ui.showOverlay('Solicitando reinicio al oponente...'); // Optional: UX message
-  } else {
-    setTimeout(init, state.AUTO_RESTART_DELAY_DRAW); // Unchanged for solo/CPU play
+    // ui.showOverlay('Solicitando reinicio al oponente...');
+  } else if (!state.pvpRemoteActive) { // Only for local/CPU games
+    setTimeout(init, state.AUTO_RESTART_DELAY_DRAW);
   }
+  // For remote games, init() will be called upon receiving restart_ack
 }
