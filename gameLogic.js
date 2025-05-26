@@ -155,13 +155,6 @@ export function init() {
   /* ── reset counters for 3-Piezas ── */
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
     // state.resetPlayerPiecesOnBoard() called in state.resetGameFlowState() should handle this.
-    // If explicit initialization to 0 for gameP1Icon and gameP2Icon is needed after that,
-    // ensure state.gameP1Icon and state.gameP2Icon are determined before this point
-    // or that resetPlayerPiecesOnBoard correctly sets up for these players.
-    // The original code had:
-    // state.setPlayerPiecesOnBoard(state.gameP1Icon, 0);
-    // state.setPlayerPiecesOnBoard(state.gameP2Icon, 0);
-    // This is generally fine if player.determineEffectiveIcons() has set gameP1Icon and gameP2Icon.
   }
 
   /* ── MODE A: remote play & paired ── */
@@ -217,9 +210,14 @@ export function init() {
       ui.setBoardClickable(false);
       ui.clearSuggestedMoveHighlight();
       setTimeout(() => {
-        if (state.gameActive) cpuMoveHandler();
-        if (state.gameActive && state.currentPlayer === state.gameP1Icon)
-          ui.setBoardClickable(true);
+        if (state.gameActive) {
+          cpuMoveHandler(); // This will call cpu.cpuMove()
+                            // cpu.cpuMove() calls gameLogic.makeMove() for CPU, then gameLogic.switchPlayer()
+        }
+        // After cpuMoveHandler has completed and player has been switched back to human (gameP1Icon)
+        if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
+          ui.setBoardClickable(true); // Re-enable the board for the human player
+        }
       }, 700 + Math.random() * 300);
     } else {
       ui.setBoardClickable(true);
@@ -257,11 +255,6 @@ export function makeMove(idx, sym) {
       ui.updateStatus(
         `${player.getPlayerName(sym)}: Ya tienes 3 piezas. Entra la fase de movimiento.`
       );
-      // The user's original code had updateAllUITogglesHandler() here.
-      // If it was intended to update UI immediately on this condition, it can be added back.
-      // However, returning false and letting the game flow might be cleaner.
-      // For now, matching the user's provided structure.
-      // updateAllUITogglesHandler(); // As per user's provided file structure for this block.
       return false;
     }
   }
@@ -293,24 +286,6 @@ export function makeMove(idx, sym) {
   }
 
   switchPlayer();
-  // The user's original code for makeMove had:
-  // if (tokens >= 3) { ... updateAllUITogglesHandler(); return false; }
-  // ...
-  // switchPlayer();
-  // updateAllUITogglesHandler(); // keeps CPU button disabled when 3-Piezas is on
-  // The call to updateAllUITogglesHandler() inside the "tokens >= 3" block was present in the user's file.
-  // I'll ensure the structure matches what they provided.
-  // The `updateAllUITogglesHandler()` here seems correctly placed as per the user's original structure.
-  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
-      state.gamePhase === state.GAME_PHASES.PLACING &&
-      state.board.filter(s => s === sym).length >= state.MAX_PIECES_PER_PLAYER) {
-      // This is a bit tricky, because if we returned false above, this won't be hit.
-      // Let's look at the original structure:
-      // if (tokens >= 3) { ui.updateStatus(...); updateAllUITogglesHandler(); return false; }
-      // So, if it returned false, it means the `updateAllUITogglesHandler()` inside that block was the one.
-      // The one *after* switchPlayer() in their code is outside that specific "tokens >= 3" return path.
-  }
-  // Matching the user's structure, they had `updateAllUITogglesHandler()` after `switchPlayer()`.
   updateAllUITogglesHandler(); // keeps CPU button disabled when 3-Piezas is on
 
 
