@@ -1,138 +1,125 @@
 // cpu.js
-import * as state from './state.js'; // state.board, state.difficulty
-import * as gameLogic from './gameLogic.js'; // gameLogic.checkWin
-import * as ui from './ui.js'; // Potentially for UI updates if CPU needs to trigger them (unlikely here)
-import * as player from './player.js'; // Potentially for player names/icons if needed (unlikely here)
+// -----------------------------------------------------------------------------
+// CPU (AI) logic for Ta-Te-Ti Deluxe
+// -----------------------------------------------------------------------------
+//  * Supports three difficulty levels: “easy”, “normal”, “hard”.
+//  * Exports:
+//      - calculateBestMove(board?, cpuIcon?, humanIcon?, difficulty?)
+//      - cpuMakeMove()              ← call this when it’s the CPU’s turn
+//
+//  NOTE: gameLogic.makeMove() already flips the player turn, checks win/draw
+//  and updates state.  DO **NOT** call gameLogic.switchPlayer() here—doing so
+//  would skip the human turn and lock the board (the bug you just hit).
+// -----------------------------------------------------------------------------
 
-/**
- * Makes a random move on the given board.
- * @param {Array<string|null>} currentBoard - The current game board array.
- * @returns {number|null} The index of the cell chosen, or null if no moves are available.
- */
-function randomMove(currentBoard) {
-    const availableCells = currentBoard.map((cell, index) => cell === null ? index : null).filter(index => index !== null);
-    if (availableCells.length > 0) {
-        return availableCells[Math.floor(Math.random() * availableCells.length)];
-    }
-    return null;
+import * as state     from './state.js';
+import * as gameLogic from './gameLogic.js';
+import * as ui        from './ui.js';
+
+/* ─────────────────────── helpers ──────────────────────────── */
+
+const WIN_LINES = gameLogic.WINNING_COMBINATIONS ?? [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],      // rows
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],      // cols
+  [0, 4, 8], [2, 4, 6]                  // diags
+];
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+function emptySquares(board) {
+  const out = [];
+  board.forEach((v, i) => { if (v === null) out.push(i); });
+  return out;
 }
 
-/**
- * Calculates the best move for a given player based on the board state and difficulty.
- * @param {Array<string|null>} currentBoard - The current game board array.
- * @param {string} CurentPlayerIcon - The icon of the player whose turn it is to move.
- * @param {string} opponentIcon - The icon of the opponent.
- * @param {string} difficultySetting - The current difficulty ('easy', 'medium', 'hard').
- * @returns {number|null} The index of the best cell to play, or null.
- */
-export function calculateBestMove(currentBoard, CurentPlayerIcon, opponentIcon, difficultySetting) {
-    let tempBoard;
-
-    // 1. Check for a winning move for CurrentPlayerIcon
-    for (let i = 0; i < 9; i++) {
-        if (currentBoard[i] === null) {
-            tempBoard = [...currentBoard];
-            tempBoard[i] = CurentPlayerIcon;
-            if (gameLogic.checkWin(CurentPlayerIcon, tempBoard)) {
-                return i;
-            }
-        }
-    }
-
-    // 2. Check for a blocking move against opponentIcon
-    for (let i = 0; i < 9; i++) {
-        if (currentBoard[i] === null) {
-            tempBoard = [...currentBoard];
-            tempBoard[i] = opponentIcon;
-            if (gameLogic.checkWin(opponentIcon, tempBoard)) {
-                return i; // Block by playing here
-            }
-        }
-    }
-
-    // For 'easy' difficulty, if not win/block, prefer random moves more often.
-    // (This logic is handled in cpuMove function directly for CPU's turn on easy)
-    // For hinting, 'easy' will also use this more strategic path.
-    
-    // 3. Try to take the center if available
-    if (difficultySetting !== 'easy' || (difficultySetting === 'easy' && Math.random() < 0.75) ) { // Easy less likely to pick center first
-        if (currentBoard[4] === null) return 4;
-    }
-
-
-    // 4. Try to take an empty corner
-    // For 'hard', prioritize corners. For 'medium', it's a good option. 'Easy' might skip or be less likely.
-    if (difficultySetting === 'hard' || (difficultySetting === 'medium' && Math.random() < 0.8) || (difficultySetting === 'easy' && Math.random() < 0.4)) {
-        const corners = [0, 2, 6, 8].filter(i => currentBoard[i] === null);
-        if (corners.length > 0) return corners[Math.floor(Math.random() * corners.length)];
-    }
-    
-    // 5. Try to take an empty side cell
-    // This becomes more relevant if center/corners are taken or strategically less important for the difficulty.
-    const sides = [1, 3, 5, 7].filter(i => currentBoard[i] === null);
-    if (sides.length > 0) return sides[Math.floor(Math.random() * sides.length)];
-    
-    // 6. Fallback to a completely random move if no strategic move was found (should be rare if sides are available)
-    return randomMove(currentBoard);
+function randomMove(board) {
+  const empties = emptySquares(board);
+  return empties[Math.floor(Math.random() * empties.length)];
 }
 
-
-/**
- * Main function for the CPU's turn.
- * Decides and makes a move based on the difficulty level.
- */
-export function cpuMove() {
-    if (!state.gameActive || !state.vsCPU || state.currentPlayer !== state.gameP2Icon) return;
-
-    let moveIndex;
-    const cpuIcon = state.gameP2Icon; // CPU is always gameP2Icon in vsCPU mode
-    const humanIcon = state.gameP1Icon; // Human is always gameP1Icon
-
-    if (state.difficulty === 'easy') {
-        // For easy CPU, 50% chance of random move, 50% chance of basic win/block check.
-        if (Math.random() < 0.5) {
-            moveIndex = randomMove(state.board);
-        } else {
-            // Check win for CPU
-            for (let i = 0; i < 9; i++) {if (state.board[i] === null) { let tb = [...state.board]; tb[i] = cpuIcon; if (gameLogic.checkWin(cpuIcon, tb)) { moveIndex = i; break;}}}
-            // Check block for Human
-            if (moveIndex === undefined) { for (let i = 0; i < 9; i++) {if (state.board[i] === null) { let tb = [...state.board]; tb[i] = humanIcon; if (gameLogic.checkWin(humanIcon, tb)) {moveIndex = i; break;}}}}
-            if (moveIndex === undefined) moveIndex = randomMove(state.board); // Fallback to random if no win/block
-        }
-    } else { // medium or hard difficulty for CPU
-        moveIndex = calculateBestMove(state.board, cpuIcon, humanIcon, state.difficulty);
+function findTwoInARow(board, icon) {
+  for (const line of WIN_LINES) {
+    const [a, b, c] = line;
+    const trio = [board[a], board[b], board[c]];
+    if (trio.filter(v => v === icon).length === 2 &&
+        trio.includes(null)) {
+      return line[trio.indexOf(null)];
     }
+  }
+  return -1;
+}
 
+/* ─────────────────────── minimax (hard) ───────────────────── */
 
-    if (moveIndex === null) { 
-        // This case should ideally not be reached if checkDraw is working,
-        // as randomMove would return null only on a full board.
-        // If it's a draw, gameLogic.makeMove will fail if board is full,
-        // and checkDraw would have been called earlier.
-        // For safety, if we reach here and it's a draw, end it.
-        if (gameLogic.checkDraw()) { // Re-check just in case
-            gameLogic.endDraw();
-        }
-        return;
+function minimax(board, depth, isMax, cpuIcon, humanIcon) {
+  const winner = gameLogic.getWinner?.(board);  // optional helper in gameLogic
+  if (winner === cpuIcon)  return { score:  10 - depth };
+  if (winner === humanIcon) return { score: -10 + depth };
+  if (emptySquares(board).length === 0) return { score: 0 };
+
+  const compare = isMax ? Math.max : Math.min;
+  let bestScore = isMax ? -Infinity : Infinity;
+  let bestIndex = -1;
+
+  for (const idx of emptySquares(board)) {
+    board[idx] = isMax ? cpuIcon : humanIcon;
+    const { score } = minimax(board, depth + 1, !isMax, cpuIcon, humanIcon);
+    board[idx] = null;
+
+    if (compare(score, bestScore) === score) {
+      bestScore = score;
+      bestIndex = idx;
     }
+  }
+  return { score: bestScore, index: bestIndex };
+}
 
-    // Make the move
-    if (gameLogic.makeMove(moveIndex, cpuIcon)) { // cpuIcon is state.gameP2Icon
-        const win = gameLogic.checkWin(cpuIcon);
-        if (win) {
-            gameLogic.endGame(cpuIcon, win);
-            return; // Game ends
-        }
-        if (gameLogic.checkDraw()) {
-            gameLogic.endDraw();
-            return; // Game ends
-        }
-        // If game continues, switch to human player
-        gameLogic.switchPlayer(); // Should switch to state.gameP1Icon
-        ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
-        // The highlight logic for human player will be handled in gameLogic.js after this switch
-    }
-    // If gameLogic.makeMove returned false (e.g. cell taken, though CPU shouldn't pick that)
-    // it implies an issue with CPU logic or game state.
-    // Board clickability for human player is handled in gameLogic.js or the main game loop.
+/* ─────────────────── main decision function ───────────────── */
+
+export function calculateBestMove(
+  board      = state.board,
+  cpuIcon    = state.gameCpuIcon,
+  humanIcon  = state.gameP1Icon,
+  difficulty = state.cpuDifficulty        // "easy" | "normal" | "hard"
+) {
+  if (difficulty === 'easy') {
+    return randomMove(board);
+  }
+
+  if (difficulty === 'normal') {
+    // 1) win if you can, 2) block if opponent can, 3) random
+    const win  = findTwoInARow(board, cpuIcon);
+    if (win !== -1) return win;
+    const block = findTwoInARow(board, humanIcon);
+    if (block !== -1) return block;
+    return randomMove(board);
+  }
+
+  // hard → minimax
+  const { index } = minimax([...board], 0, true, cpuIcon, humanIcon);
+  return index;
+}
+
+/* ───────────────────────── AI turn ─────────────────────────── */
+
+export async function cpuMakeMove() {
+  if (!state.gameActive) return;
+
+  ui.setBoardClickable(false);                // freeze board while thinking
+  await delay(250);                           // little pause for UX
+
+  const moveIndex = calculateBestMove();
+  const moved     = gameLogic.makeMove(moveIndex, state.gameCpuIcon);
+
+  // Fallback guard (should never trigger, but keeps things robust)
+  if (!moved) {
+    const fallback = randomMove(state.board);
+    gameLogic.makeMove(fallback, state.gameCpuIcon);
+  }
+
+  // If the game is still running it’s now the human’s turn.
+  if (state.gameActive && state.currentPlayer === state.gameP1Icon) {
+    ui.setBoardClickable(true);
+    ui.updateStatus(`Turno del ${state.player1Name ?? 'Jugador 1'}`);
+  }
 }
