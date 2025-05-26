@@ -15,7 +15,13 @@ let mainStopAnyGameInProgressAndResetUICallback;
  * ------------------------------------------------------------------ */
 
 function handleCellClick(e) {
-    if (!state.gameActive) return;
+    if (!state.gameActive && !(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING && state.selectedPieceIndex !== null)) {
+        // Allow clicking to move a selected piece even if gameActive was just set to false by a previous check,
+        // but the current action is to complete that move.
+        // More robust check would be inside the move logic. For now, if not active and no piece selected for move, return.
+        if (!state.gameActive) return;
+    }
+
 
     const clickedCell = e.target.closest('.cell');
     if (!clickedCell) return;
@@ -47,30 +53,28 @@ function handleCellClick(e) {
                     `${player.getPlayerName(state.currentPlayer)}: Selecciona una pieza para mover.`
                 );
             } else if (state.board[cellIndex] === null) {           // destination (attempt to move piece)
-                const fromIndex = state.selectedPieceIndex; // Capture before it's potentially nulled
+                const fromIndex = state.selectedPieceIndex; 
                 const toIndex = cellIndex;
-                const currentMovingPlayer = state.currentPlayer; // Capture player making the move
+                const currentMovingPlayer = state.currentPlayer; 
 
-                ui.clearSelectedPieceHighlight(); // Clear highlight regardless of move success for now
+                ui.clearSelectedPieceHighlight(); 
                 
                 if (
                     gameLogic.movePiece(
                         fromIndex,
                         toIndex,
-                        currentMovingPlayer // Use the captured current player
+                        currentMovingPlayer 
                     )
                 ) {
-                    /* move succeeded – gameLogic switches turn locally */
-                    // If it's a remote game, send the move data
-                    if (state.pvpRemoteActive && state.gamePaired && state.gameActive) {
+                    // Move succeeded – gameLogic.movePiece might have changed state.gameActive if game ended.
+                    // We need to send the move outcome regardless in a remote game.
+                    if (state.pvpRemoteActive && state.gamePaired) { // Don't gate on state.gameActive for *sending*
                         const moveData = {
                             type: 'move',
-                            from: fromIndex, // Send 'from'
-                            to: toIndex,     // Send 'to' for slide moves
-                            // player: currentMovingPlayer // Optional: can be inferred by receiver
+                            from: fromIndex, 
+                            to: toIndex,     
                         };
 
-                        // Check for win/draw AFTER the move has been made and board state updated
                         const winDetails = gameLogic.checkWin(currentMovingPlayer, state.board);
                         if (winDetails) {
                             moveData.winner       = currentMovingPlayer;
@@ -81,52 +85,41 @@ function handleCellClick(e) {
 
                         peerConnection.sendPeerData(moveData);
 
-                        // After sending, local player waits for opponent
-                        if (!moveData.winner && !moveData.draw) {
+                        // Only set to waiting state IF THE GAME HASN'T ENDED LOCALLY
+                        if (!moveData.winner && !moveData.draw && state.gameActive) { 
                             state.setIsMyTurnInRemote(false);
-                            // gameLogic.movePiece already called switchPlayer, so state.currentPlayer is now the opponent
                             ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
                             ui.setBoardClickable(false);
                         }
-                        // If there's a winner or draw, gameLogic.endGame/endDraw will handle UI,
-                        // including board clickability.
+                        // If game ended, gameLogic.endGame/endDraw already handled local UI (board unclickable, status)
                     }
-                    // For local/CPU, gameLogic.movePiece handles UI updates for the next player's turn.
                 } else {
-                    // Move was invalid (e.g., not adjacent)
-                    // gameLogic.movePiece would have returned false and potentially updated status.
-                    // Ensure status is appropriate for the current player to try again.
                     ui.updateStatus(
                         `${player.getPlayerName(currentMovingPlayer)}: Movimiento inválido. Selecciona tu pieza y luego un espacio adyacente vacío.`
                     );
-                    state.setSelectedPieceIndex(null); // Clear selection as the move failed.
-                    // Highlight might have been cleared already, but ensure it.
+                    state.setSelectedPieceIndex(null); 
                     ui.clearSelectedPieceHighlight();
-                    // Re-enable board if it's still this player's turn (especially for local play)
-                    // For remote, if move failed, board should remain clickable for current player
                     if (!state.pvpRemoteActive || state.isMyTurnInRemote) {
                          ui.setBoardClickable(true);
                          gameLogic.showEasyModeHint?.();
                     }
                 }
-            } else if (state.board[cellIndex] === state.currentPlayer) { // change selection
+            } else if (state.board[cellIndex] === state.currentPlayer) { 
                 state.setSelectedPieceIndex(cellIndex);
-                ui.highlightSelectedPiece(cellIndex); // Highlight new selection
+                ui.highlightSelectedPiece(cellIndex); 
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Mueve la pieza seleccionada a un espacio adyacente vacío.`
                 );
-            } else { // Clicked on opponent's piece or an invalid cell not handled above
+            } else { 
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Movimiento inválido. Mueve tu pieza seleccionada a un espacio adyacente vacío.`
                 );
             }
         }
-        return; // IMPORTANT: Stop here for MOVING phase to prevent falling into PLACEMENT logic for remote data
+        return; 
     }
 
     /* ----------  CLASSIC OR THREE-PIECE PLACEMENT PHASE  ---------- */
-    // This part now correctly only handles piece placements.
-    // Check if the cell is occupied; if so, it's an invalid placement.
     if (clickedCell.querySelector('span')?.textContent !== '') return;
 
     let playerSymbolToPlace = null;
@@ -135,16 +128,16 @@ function handleCellClick(e) {
         if (!state.gamePaired || !state.isMyTurnInRemote) return;
         playerSymbolToPlace = state.myEffectiveIcon;
     } else if (state.vsCPU) {
-        if (state.currentPlayer !== state.gameP1Icon) return; // Human is always P1 vs CPU
+        if (state.currentPlayer !== state.gameP1Icon) return; 
         playerSymbolToPlace = state.gameP1Icon;
-    } else { // Local PvP
+    } else { 
         playerSymbolToPlace = state.currentPlayer;
     }
 
     if (playerSymbolToPlace && gameLogic.makeMove(cellIndex, playerSymbolToPlace)) {
-        // Placement move succeeded – gameLogic.makeMove has switched turn locally.
-        if (state.pvpRemoteActive && state.gamePaired && state.gameActive) {
-            const moveData = { type: 'move', index: cellIndex }; // Correct for placement moves
+        // Placement move succeeded – gameLogic.makeMove might have changed state.gameActive if game ended.
+        if (state.pvpRemoteActive && state.gamePaired) { // Don't gate on state.gameActive for *sending*
+            const moveData = { type: 'move', index: cellIndex }; 
 
             const winDetails = gameLogic.checkWin(playerSymbolToPlace, state.board);
             if (winDetails) {
@@ -156,11 +149,13 @@ function handleCellClick(e) {
 
             peerConnection.sendPeerData(moveData);
 
-            if (!moveData.winner && !moveData.draw) {
+            // Only set to waiting state IF THE GAME HASN'T ENDED LOCALLY
+            if (!moveData.winner && !moveData.draw && state.gameActive) {
                 state.setIsMyTurnInRemote(false);
                 ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
                 ui.setBoardClickable(false);
             }
+             // If game ended, gameLogic.endGame/endDraw already handled local UI
         }
     }
 }
@@ -215,43 +210,30 @@ export function setupEventListeners(stopCb) {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(false);
         state.setPvpRemoteActive(false);
-        // state.setGameVariant(state.GAME_VARIANTS.CLASSIC); // Keep current variant
-        // localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
         gameLogic.init();
     });
 
     /* 3-Piece ON/OFF switch  */
     ui.threePieceToggle?.addEventListener('change', e => {
         const useThreePiece = e.target.checked;
-        mainStopAnyGameInProgressAndResetUICallback?.(); // Stop current game before switching variant
+        mainStopAnyGameInProgressAndResetUICallback?.(); 
 
         state.setGameVariant(
             useThreePiece ? state.GAME_VARIANTS.THREE_PIECE
                           : state.GAME_VARIANTS.CLASSIC
         );
         localStorage.setItem('tatetiGameVariant', state.gameVariant);
-
-        // CPU mode is now compatible with Three-Piece, so no need to auto-disable it.
-        // if (useThreePiece && state.vsCPU) state.setVsCPU(false); // REMOVED
-
-        gameLogic.init(); // Initialize with new variant, possibly vs CPU
+        gameLogic.init(); 
     });
 
     ui.hostGameBtn?.addEventListener('click', () => {
-        /* preserve current variant (Classic or Three-Piece) for host */
         peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
     });
 
     ui.cpuBtn?.addEventListener('click', () => {
-        // CPU mode is now allowed with Three-Piece, so the guard is removed.
-        // if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) return; // REMOVED
-
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(true);
         state.setPvpRemoteActive(false);
-        // Game variant is preserved when switching to CPU mode
-        // state.setGameVariant(state.GAME_VARIANTS.CLASSIC); // This would force classic
-        // localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
         gameLogic.init();
     });
 
@@ -260,11 +242,9 @@ export function setupEventListeners(stopCb) {
         btn?.addEventListener('click', e => {
             state.setDifficulty(e.target.id.replace('Btn', ''));
             sound.playSound('move');
-            // Re-init game if vs CPU and game is not active or board is empty,
-            // to apply new difficulty immediately if a game hasn't really started.
             if (state.vsCPU && (!state.gameActive || state.board.every(c => c === null))) {
                 gameLogic.init();
-            } else if (state.vsCPU) { // Otherwise, just update buttons
+            } else if (state.vsCPU) { 
                 ui.updateAllUIToggleButtons();
             }
         });
@@ -276,9 +256,9 @@ export function setupEventListeners(stopCb) {
             localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting);
             sound.playSound('move');
             if (!state.gameActive || state.board.every(c => c === null)) {
-                gameLogic.init(); // Re-init if game hasn't started to apply new setting
+                gameLogic.init(); 
             } else {
-                ui.updateAllUIToggleButtons(); // Just update buttons if game is in progress
+                ui.updateAllUIToggleButtons(); 
             }
         });
     });
