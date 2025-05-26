@@ -86,9 +86,9 @@ function handleCellClick(e) {
         if (!state.gamePaired || !state.isMyTurnInRemote) return;
         playerSymbolToPlace = state.myEffectiveIcon;
     } else if (state.vsCPU) {
-        if (state.currentPlayer !== state.gameP1Icon) return;
+        if (state.currentPlayer !== state.gameP1Icon) return; // Human is always P1 vs CPU
         playerSymbolToPlace = state.gameP1Icon;
-    } else {
+    } else { // Local PvP
         playerSymbolToPlace = state.currentPlayer;
     }
 
@@ -165,15 +165,15 @@ export function setupEventListeners(stopCb) {
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(false);
         state.setPvpRemoteActive(false);
-        state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
-        localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
+        // state.setGameVariant(state.GAME_VARIANTS.CLASSIC); // Keep current variant
+        // localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
         gameLogic.init();
     });
 
     /* 3-Piece ON/OFF switch  */
     ui.threePieceToggle?.addEventListener('change', e => {
         const useThreePiece = e.target.checked;
-        mainStopAnyGameInProgressAndResetUICallback?.();
+        mainStopAnyGameInProgressAndResetUICallback?.(); // Stop current game before switching variant
 
         state.setGameVariant(
             useThreePiece ? state.GAME_VARIANTS.THREE_PIECE
@@ -181,33 +181,27 @@ export function setupEventListeners(stopCb) {
         );
         localStorage.setItem('tatetiGameVariant', state.gameVariant);
 
-        /* Auto-disable CPU if user flips to Three-Piece */
-        if (useThreePiece && state.vsCPU) state.setVsCPU(false);
+        // CPU mode is now compatible with Three-Piece, so no need to auto-disable it.
+        // if (useThreePiece && state.vsCPU) state.setVsCPU(false); // REMOVED
 
-        gameLogic.init();
+        gameLogic.init(); // Initialize with new variant, possibly vs CPU
     });
 
     ui.hostGameBtn?.addEventListener('click', () => {
-        /* preserve current variant (Classic or Three-Piece) */
+        /* preserve current variant (Classic or Three-Piece) for host */
         peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
     });
 
-    // Listener for joinGameBtn removed as the button has been removed
-    /*
-    ui.joinGameBtn?.addEventListener('click', () => {
-        peerConnection.initializePeerAsJoiner(null, mainStopAnyGameInProgressAndResetUICallback);
-    });
-    */
-
     ui.cpuBtn?.addEventListener('click', () => {
-        /* CPU mode is disabled when Three-Piece is active */
-        if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) return;
+        // CPU mode is now allowed with Three-Piece, so the guard is removed.
+        // if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) return; // REMOVED
 
         mainStopAnyGameInProgressAndResetUICallback?.();
         state.setVsCPU(true);
         state.setPvpRemoteActive(false);
-        state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
-        localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
+        // Game variant is preserved when switching to CPU mode
+        // state.setGameVariant(state.GAME_VARIANTS.CLASSIC); // This would force classic
+        // localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
         gameLogic.init();
     });
 
@@ -216,9 +210,11 @@ export function setupEventListeners(stopCb) {
         btn?.addEventListener('click', e => {
             state.setDifficulty(e.target.id.replace('Btn', ''));
             sound.playSound('move');
+            // Re-init game if vs CPU and game is not active or board is empty,
+            // to apply new difficulty immediately if a game hasn't really started.
             if (state.vsCPU && (!state.gameActive || state.board.every(c => c === null))) {
                 gameLogic.init();
-            } else if (state.vsCPU) {
+            } else if (state.vsCPU) { // Otherwise, just update buttons
                 ui.updateAllUIToggleButtons();
             }
         });
@@ -230,9 +226,9 @@ export function setupEventListeners(stopCb) {
             localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting);
             sound.playSound('move');
             if (!state.gameActive || state.board.every(c => c === null)) {
-                gameLogic.init();
+                gameLogic.init(); // Re-init if game hasn't started to apply new setting
             } else {
-                ui.updateAllUIToggleButtons();
+                ui.updateAllUIToggleButtons(); // Just update buttons if game is in progress
             }
         });
     });

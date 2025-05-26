@@ -8,7 +8,7 @@ import * as state         from './state.js';
 import * as player        from './player.js';
 import * as sound         from './sound.js';
 import * as gameLogic     from './gameLogic.js';
-import { cpuMove }        from './cpu.js';          // ← FIX: import the correct name
+import { cpuMove, cpuMoveThreePiece } from './cpu.js'; // Ensure both are imported
 import * as peerConnection from './peerConnection.js';
 import * as theme         from './theme.js';
 import { setupEventListeners } from './eventListeners.js';
@@ -41,7 +41,16 @@ document.addEventListener('DOMContentLoaded', () => {
   theme.initializeTheme();
   ui.updateSoundToggleButton(state.soundEnabled);
 
-  gameLogic.setCpuMoveHandler(cpuMove);              // ← FIX: handler uses cpuMove
+  // Set the CPU move handler in gameLogic
+  // This handler will decide which CPU function to call based on the game variant
+  gameLogic.setCpuMoveHandler(async () => {
+    if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+      await cpuMoveThreePiece();
+    } else {
+      await cpuMove();
+    }
+  });
+
   gameLogic.setUpdateScoreboardHandler(ui.updateScoreboard);
   gameLogic.setUpdateAllUITogglesHandler(ui.updateAllUIToggleButtons);
 
@@ -49,10 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
     peerConnection.closePeerSession();
     state.setGameActive(false);
     state.resetRemoteState();
-    state.setVsCPU(false);
+    state.setVsCPU(false); // Reset vsCPU state
     ui.hideOverlay();
     ui.hideQRCode();
-    ui.updateAllUIToggleButtons();
+    ui.updateAllUIToggleButtons(); // Ensure UI reflects these resets
   }
 
   player.loadPlayerPreferences();
@@ -73,14 +82,18 @@ document.addEventListener('DOMContentLoaded', () => {
       // Joining a remote game defaults to classic variant
       state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
       localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
+      ui.threePieceToggle && (ui.threePieceToggle.checked = false); // Ensure toggle reflects this
 
       peerConnection.initializePeerAsJoiner(roomId, stopAnyGameInProgressAndResetUI);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
+      // Normal startup, initialize game based on current/saved state
       gameLogic.init();
 
       // Open the side-menu on first load if not already open
-      if (ui.sideMenu && !ui.sideMenu.classList.contains('open')) {
+      // and not in a remote game waiting for a peer
+      if (ui.sideMenu && !ui.sideMenu.classList.contains('open') &&
+          ! (state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote) ) {
         ui.toggleMenu();
       }
     }
