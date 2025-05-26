@@ -77,9 +77,14 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC); // Persist this if joining via URL
             peerConnection.initializePeerAsJoiner(roomId, stopAnyGameInProgressAndResetUI);
             window.history.replaceState({}, document.title, window.location.pathname);
+            // Menu remains closed by default when joining via link
         } else {
             // For a normal load, gameLogic.init() will respect the gameVariant loaded from localStorage (or default).
             gameLogic.init(); 
+            // Open the menu on first load if not joining via link and it's not already open
+            if (ui.sideMenu && !ui.sideMenu.classList.contains('open')) { //
+                ui.toggleMenu(); //
+            }
         }
     }
     checkUrlForRoomAndJoin();

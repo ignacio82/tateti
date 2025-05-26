@@ -1,5 +1,5 @@
 // ui.js
-/*  =========================================================================
+/* =========================================================================
     UI helpers & DOM references
     ========================================================================= */
 
@@ -12,7 +12,7 @@ export const statusDiv        = document.getElementById('status');
 
 export const pvpLocalBtn      = document.getElementById('pvpLocalBtn');   // «Local»
 export const hostGameBtn      = document.getElementById('hostGameBtn');
-export const joinGameBtn      = document.getElementById('joinGameBtn');
+// export const joinGameBtn      = document.getElementById('joinGameBtn'); // Removed
 export const cpuBtn           = document.getElementById('cpuBtn');
 
 /* new toggle switch for 3-Piece vs Classic */
@@ -50,7 +50,7 @@ export const savePlayerPrefsBtn = document.getElementById('savePlayerPrefsBtn');
 /* ----------  scoreboard  ---------- */
 export const resultsDiv       = document.getElementById('results');
 
-/*  =========================================================================
+/* =========================================================================
     GENERIC UI HELPERS
     ========================================================================= */
 
@@ -191,10 +191,20 @@ export function updateScoreboard(){
    ========================================================================= */
 export function updateAllUIToggleButtons(){
     /* clear */
-    [pvpLocalBtn, hostGameBtn, joinGameBtn, cpuBtn].forEach(b=>b?.classList.remove('active'));
+    // Removed joinGameBtn from this array
+    [pvpLocalBtn, hostGameBtn, cpuBtn].forEach(b=>b?.classList.remove('active'));
 
     if(state.pvpRemoteActive){
-        (state.iAmPlayer1InRemote ? hostGameBtn : joinGameBtn)?.classList.add('active');
+        // If joinGameBtn is removed, only hostGameBtn can be active in pvpRemoteActive state from this direct logic.
+        // This assumes that if pvpRemoteActive is true, and you are not player 1 (host),
+        // then you must have joined, but there's no button to reflect that active state anymore.
+        // The logic simplifies to only highlighting hostGameBtn if you are the host.
+        if (state.iAmPlayer1InRemote) {
+            hostGameBtn?.classList.add('active');
+        }
+        // If !state.iAmPlayer1InRemote (i.e., you are the joiner), no specific button in this group
+        // will be marked 'active' for the remote session status, as joinGameBtn is removed.
+        // This might be acceptable as the game board/status will indicate you're in a remote game.
     }else if(state.vsCPU){
         cpuBtn?.classList.add('active');
     }else{
@@ -224,8 +234,11 @@ export function updateAllUIToggleButtons(){
 
     /* Disable CPU button in 3-Piece mode */
     const cpuDisabled = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE;
-    cpuBtn.disabled = cpuDisabled;
-    cpuBtn.classList.toggle('disabled',cpuDisabled);
+    if (cpuBtn) { // Check if cpuBtn exists before accessing properties
+      cpuBtn.disabled = cpuDisabled;
+      cpuBtn.classList.toggle('disabled',cpuDisabled);
+    }
+
 
     /* sync the on/off switch */
     if(threePieceToggle) threePieceToggle.checked = state.gameVariant===state.GAME_VARIANTS.THREE_PIECE;
@@ -286,10 +299,14 @@ export function displayQRCode(gameLink){
     qrDisplayArea.style.display='flex';
 }
 export function hideQRCode(){
-    qrDisplayArea.style.display='none';
-    qrDisplayArea.classList.remove('modal');
-    copyHostIdBtn.textContent='Copiar Enlace del Juego';
-    copyHostIdBtn.classList.remove('copied');
+    if (qrDisplayArea) { // Check if qrDisplayArea exists
+        qrDisplayArea.style.display='none';
+        qrDisplayArea.classList.remove('modal');
+    }
+    if (copyHostIdBtn) { // Check if copyHostIdBtn exists
+        copyHostIdBtn.textContent='Copiar Enlace del Juego';
+        copyHostIdBtn.classList.remove('copied');
+    }
 }
 
 /* =========================================================================

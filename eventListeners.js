@@ -11,7 +11,7 @@ import * as theme from './theme.js';
 let mainStopAnyGameInProgressAndResetUICallback;
 
 /* ------------------------------------------------------------------ *
- *  Helpers                                                            *
+ * Helpers                                                            *
  * ------------------------------------------------------------------ */
 
 function handleCellClick(e) {
@@ -127,7 +127,7 @@ function changeSymbolsBtnHandler() {
 }
 
 /* ------------------------------------------------------------------ *
- *  Public: setupEventListeners                                       *
+ * Public: setupEventListeners                                       *
  * ------------------------------------------------------------------ */
 export function setupEventListeners(stopCb) {
     mainStopAnyGameInProgressAndResetUICallback = stopCb;
@@ -192,9 +192,12 @@ export function setupEventListeners(stopCb) {
         peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
     });
 
+    // Listener for joinGameBtn removed as the button has been removed
+    /*
     ui.joinGameBtn?.addEventListener('click', () => {
         peerConnection.initializePeerAsJoiner(null, mainStopAnyGameInProgressAndResetUICallback);
     });
+    */
 
     ui.cpuBtn?.addEventListener('click', () => {
         /* CPU mode is disabled when Three-Piece is active */
