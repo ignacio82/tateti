@@ -48,9 +48,16 @@
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
             <div class="mode" aria-label="Seleccionar modo">
-                <button id="pvpLocalBtn" class="std mode-btn active">Clásico (Local)</button> <button id="threePieceBtn" class="std mode-btn">3 Piezas (Local)</button> <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                <button id="pvpLocalBtn" class="std mode-btn active">Local</button>  <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
                 <button id="joinGameBtn" class="std mode-btn">Unirse a Juego Remoto</button>
                 <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+                <div id="threePieceWrapper" class="toggle-wrapper">
+                  <span class="toggle-title">3 Piezas</span>
+                  <label class="switch">
+                    <input type="checkbox" id="threePieceToggle" />
+                    <span class="slider round"></span>
+                  </label>
+                </div>                
             </div>
 
             <div id="player-customization" style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);">
