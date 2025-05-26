@@ -14,14 +14,18 @@ let mainStopAnyGameInProgressAndResetUICallback;
  * ------------------------------------------------------------------ */
 
 function handleCellClick(e) {
+    // Initial gameActive check. More nuanced checks might be needed if a move could start a game.
+    // If no piece is selected in moving phase, gameActive must be true to proceed.
     if (!state.gameActive && !(state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING && state.selectedPieceIndex !== null)) {
-        if (!state.gameActive) return;
+        if (!state.gameActive) return; // Stricter check if not trying to complete a move in 3-piece
     }
 
     const clickedCell = e.target.closest('.cell');
     if (!clickedCell) return;
 
     const cellIndex = parseInt(clickedCell.dataset.index, 10);
+    let localMoveProcessed = false;
+    let playerMakingTheMove = null; // To store who made the move for win/draw check
 
     /* ----------  THREE-PIECE VARIANT : MOVING PHASE  ---------- */
     if (
@@ -50,44 +54,15 @@ function handleCellClick(e) {
             } else if (state.board[cellIndex] === null) {           // destination (attempt to move piece)
                 const fromIndex = state.selectedPieceIndex;
                 const toIndex = cellIndex;
-                const playerMakingTheMove = state.currentPlayer; // Player whose turn it was when initiating this action
+                playerMakingTheMove = state.currentPlayer; // Player whose turn it was when initiating this action
 
                 ui.clearSelectedPieceHighlight();
                 
                 if (gameLogic.movePiece(fromIndex, toIndex, playerMakingTheMove)) {
-                    // Move succeeded. gameLogic.movePiece has updated:
-                    // - state.board
-                    // - state.currentPlayer (now the *next* player via switchPlayer)
-                    // - state.gamePhase (remains MOVING unless game ends)
-                    // - state.gameActive (to false if game ended)
-
-                    if (state.pvpRemoteActive && state.gamePaired) {
-                        const moveData = {
-                            type: 'move',
-                            from: fromIndex,
-                            to: toIndex,
-                            gamePhaseAfterMove: state.gamePhase, 
-                            playerWhoMadeTheMoveIcon: playerMakingTheMove, // Icon of the player who just moved
-                            nextPlayerIconAfterMove: state.currentPlayer    // Icon of the player whose turn is NEXT (after switchPlayer)
-                        };
-
-                        const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board); // Check win for playerMakingTheMove
-                        if (winDetails) {
-                            moveData.winner = playerMakingTheMove;
-                            moveData.winningCells = winDetails;
-                        } else if (gameLogic.checkDraw(state.board)) {
-                            moveData.draw = true;
-                        }
-
-                        peerConnection.sendPeerData(moveData);
-
-                        if (!moveData.winner && !moveData.draw && state.gameActive) { 
-                            state.setIsMyTurnInRemote(false);
-                            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`); 
-                            ui.setBoardClickable(false);
-                        }
-                    }
+                    localMoveProcessed = true;
+                    // gameLogic.movePiece has updated local state (board, currentPlayer, gamePhase, gameActive)
                 } else {
+                    // Move was invalid
                     ui.updateStatus(
                         `${player.getPlayerName(playerMakingTheMove)}: Movimiento inválido. Selecciona tu pieza y luego un espacio adyacente vacío.`
                     );
@@ -98,63 +73,80 @@ function handleCellClick(e) {
                          gameLogic.showEasyModeHint?.();
                     }
                 }
-            } else if (state.board[cellIndex] === state.currentPlayer) { 
+            } else if (state.board[cellIndex] === state.currentPlayer) { // change selection
                 state.setSelectedPieceIndex(cellIndex);
                 ui.highlightSelectedPiece(cellIndex); 
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Mueve la pieza seleccionada a un espacio adyacente vacío.`
                 );
-            } else { 
+            } else { // Clicked on opponent's piece or an invalid cell not handled above
                 ui.updateStatus(
                     `${player.getPlayerName(state.currentPlayer)}: Movimiento inválido. Mueve tu pieza seleccionada a un espacio adyacente vacío.`
                 );
             }
         }
-        return; 
+        // For MOVING phase, if a move was processed, fall through to send state. If only selection changed, return.
+        if (!localMoveProcessed && state.selectedPieceIndex !== null) return; // Only selection changed, don't send state.
+        if (!localMoveProcessed && state.selectedPieceIndex === null && cellIndex !== state.selectedPieceIndex) return; // Deselection, don't send state.
+
+    } else { /* ----------  CLASSIC OR THREE-PIECE PLACEMENT PHASE  ---------- */
+        if (clickedCell.querySelector('span')?.textContent !== '') return; // Cell occupied
+
+        if (state.pvpRemoteActive) {
+            if (!state.gamePaired || !state.isMyTurnInRemote) return; 
+            playerMakingTheMove = state.myEffectiveIcon;
+        } else if (state.vsCPU) {
+            if (state.currentPlayer !== state.gameP1Icon) return; 
+            playerMakingTheMove = state.gameP1Icon;
+        } else { 
+            playerMakingTheMove = state.currentPlayer;
+        }
+
+        if (playerMakingTheMove && gameLogic.makeMove(cellIndex, playerMakingTheMove)) {
+            localMoveProcessed = true;
+            // gameLogic.makeMove has updated local state (board, currentPlayer, gamePhase, gameActive)
+        }
     }
 
-    /* ----------  CLASSIC OR THREE-PIECE PLACEMENT PHASE  ---------- */
-    if (clickedCell.querySelector('span')?.textContent !== '') return;
+    // If a local move was successfully processed, send the new state in P2P games
+    if (localMoveProcessed && state.pvpRemoteActive && state.gamePaired) {
+        // Scores are not strictly part of "move" state but can be sent for robust sync if desired
+        // For now, focusing on essential game state for turns.
+        const fullStateData = {
+            type: 'full_state_update',
+            board: [...state.board], // Send a copy of the board
+            currentPlayer: state.currentPlayer, // This is the player whose turn it is NEXT
+            gamePhase: state.gamePhase,
+            gameActive: state.gameActive,
+            // Include win/draw information based on the playerWhoMadeTheMove
+            // Note: gameLogic would have set gameActive = false if game ended.
+            // The 'winner' and 'draw' fields here are for the remote player to know the outcome clearly.
+            winner: null,
+            draw: false,
+            // We also need to determine who made the move that led to this state, for win/draw context
+            // playerWhoMadeTheMoveIcon is `playerMakingTheMove` captured above.
+        };
 
-    let playerMakingTheMove = null; 
-
-    if (state.pvpRemoteActive) {
-        if (!state.gamePaired || !state.isMyTurnInRemote) return;
-        playerMakingTheMove = state.myEffectiveIcon;
-    } else if (state.vsCPU) {
-        if (state.currentPlayer !== state.gameP1Icon) return; 
-        playerMakingTheMove = state.gameP1Icon;
-    } else { 
-        playerMakingTheMove = state.currentPlayer;
-    }
-
-    if (playerMakingTheMove && gameLogic.makeMove(cellIndex, playerMakingTheMove)) {
-        // Placement succeeded. gameLogic.makeMove has updated states.
-        if (state.pvpRemoteActive && state.gamePaired) {
-            const moveData = {
-                type: 'move',
-                index: cellIndex,
-                gamePhaseAfterMove: state.gamePhase,
-                playerWhoMadeTheMoveIcon: playerMakingTheMove, // Icon of the player who just moved
-                nextPlayerIconAfterMove: state.currentPlayer    // Icon of the player whose turn is NEXT (after switchPlayer)
-            }; 
-
-            const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board); // Check win for playerMakingTheMove
+        if (!state.gameActive && playerMakingTheMove) { // If game just ended with this move
+            const winDetails = gameLogic.checkWin(playerMakingTheMove, state.board);
             if (winDetails) {
-                moveData.winner = playerMakingTheMove;
-                moveData.winningCells = winDetails;
+                fullStateData.winner = playerMakingTheMove;
+                // fullStateData.winningCells = winDetails; // Optional: if receiver needs to highlight
             } else if (gameLogic.checkDraw(state.board)) {
-                moveData.draw = true;
-            }
-
-            peerConnection.sendPeerData(moveData);
-
-            if (!moveData.winner && !moveData.draw && state.gameActive) {
-                state.setIsMyTurnInRemote(false);
-                ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
-                ui.setBoardClickable(false);
+                fullStateData.draw = true;
             }
         }
+        
+        console.log("eventListeners: Sending full_state_update:", JSON.parse(JSON.stringify(fullStateData)));
+        peerConnection.sendPeerData(fullStateData);
+
+        // After sending the state, local player waits (if game is still active)
+        if (state.gameActive) { 
+            state.setIsMyTurnInRemote(false);
+            ui.updateStatus(`Esperando a ${player.getPlayerName(state.currentPlayer)}...`); 
+            ui.setBoardClickable(false);
+        }
+        // If game ended, local UI is already handled by gameLogic's endGame/endDraw
     }
 }
 
@@ -191,11 +183,14 @@ export function setupEventListeners(stopCb) {
     /* ----------  RESTART  ---------- */
     ui.restartIcon?.addEventListener('click', () => {
         if (state.pvpRemoteActive && state.gamePaired) {
+            // For full state sync, a restart might just re-initialize locally and send new init state.
+            // Or, send a specific 'restart_request' which then causes both to re-init.
+            // Keeping restart_request for now as it's a different kind of message.
             peerConnection.sendPeerData({ type: 'restart_request' });
             ui.showOverlay('Solicitud de reinicio enviada...');
         } else {
             mainStopAnyGameInProgressAndResetUICallback?.();
-            gameLogic.init();
+            gameLogic.init(); // This will reset local state
         }
         ui.sideMenu?.classList.remove('open');
     });
