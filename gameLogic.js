@@ -36,11 +36,11 @@ export function showEasyModeHint() {
   if (
     state.vsCPU &&
     state.difficulty === 'easy' &&
-    state.currentPlayer === state.gameP1Icon && 
+    state.currentPlayer === state.myEffectiveIcon && // For vs CPU, myEffectiveIcon is P1
     state.gameActive
   ) {
-    const humanIcon = state.gameP1Icon;
-    const cpuIcon   = state.gameP2Icon;
+    const humanIcon = state.myEffectiveIcon; // Human is P1
+    const cpuIcon   = state.opponentEffectiveIcon; // CPU is P2
 
     if (state.gameVariant === state.GAME_VARIANTS.CLASSIC) {
       const idx = calculateBestMove(state.board, humanIcon, cpuIcon, 'hint');
@@ -57,11 +57,11 @@ export function showEasyModeHint() {
         const bestSlide = calculateBestSlideForHint(state.board, humanIcon, cpuIcon);
         if (bestSlide) {
           if (state.selectedPieceIndex === null) {
-            if (bestSlide.from !== null && state.board[bestSlide.from] === humanIcon) { // Check not null
+            if (bestSlide.from !== null && state.board[bestSlide.from] === humanIcon) {
               ui.highlightSuggestedMove(bestSlide.from);
             }
           } else if (state.selectedPieceIndex === bestSlide.from) {
-            if (bestSlide.to !== null && state.board[bestSlide.to] === null) { // Check not null
+            if (bestSlide.to !== null && state.board[bestSlide.to] === null) {
               ui.highlightSuggestedMove(bestSlide.to);
             }
           }
@@ -81,7 +81,7 @@ export const checkWin = (sym, board = state.board) => {
 };
 
 export const areCellsAdjacent = (a, b) => {
-  if (a === null || b === null || a < 0 || a > 8 || b < 0 || b > 8 ) return false; // Bounds check
+  if (a === null || b === null || a < 0 || a > 8 || b < 0 || b > 8 ) return false;
   if (a === b) return false;
   const r1 = Math.floor(a / 3), c1 = a % 3;
   const r2 = Math.floor(b / 3), c2 = b % 3;
@@ -148,9 +148,9 @@ export function switchPlayer() {
   }
   ui.updateStatus(statusMessage);
   
-  const isMyTurnForHint = (state.pvpRemoteActive && state.isMyTurnInRemote) || // Remote and my turn
-                         (!state.pvpRemoteActive && !state.vsCPU) || // Local PvP (always show for current player)
-                         (!state.pvpRemoteActive && state.vsCPU && state.currentPlayer === state.gameP1Icon); // Vs CPU and it's human's turn
+  const isMyTurnForHint = (state.pvpRemoteActive && state.isMyTurnInRemote) || 
+                         (!state.pvpRemoteActive && !state.vsCPU) || 
+                         (!state.pvpRemoteActive && state.vsCPU && state.currentPlayer === state.myEffectiveIcon); 
 
   if (state.gameActive && isMyTurnForHint) {
     showEasyModeHint();
@@ -165,7 +165,7 @@ export function init() {
   ui.removeConfetti();
   ui.hideOverlay();
   ui.hideQRCode();
-  ui.clearBoardUI();
+  ui.clearBoardUI(); // Clears board content and classes
   state.resetGameFlowState(); 
 
   state.setBoard(Array(9).fill(null));
@@ -181,7 +181,7 @@ export function init() {
         ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}`
         : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`
     );
-    ui.setBoardClickable(state.isMyTurnInRemote); // Crucial: set clickability based on whose turn it is
+    ui.setBoardClickable(state.isMyTurnInRemote); // This will use the new setBoardClickable logic
     state.setGameActive(true);
   } else if (state.pvpRemoteActive && !state.gamePaired) {
     console.log("gameLogic.init(): PVP Remote & NOT Paired");
@@ -189,7 +189,7 @@ export function init() {
     state.setGameActive(false);
      if (state.iAmPlayer1InRemote && state.currentHostPeerId) {
          ui.updateStatus(`Comparte el enlace o ID: ${state.currentHostPeerId}`);
-         const desiredBaseUrl = 'https://tateti.martinez.fyi'; // Ensure this is correct
+         const desiredBaseUrl = 'https://tateti.martinez.fyi'; 
          const gameLink = `${desiredBaseUrl}/?room=${state.currentHostPeerId}`;
          ui.displayQRCode(gameLink);
     } else if (!state.iAmPlayer1InRemote && state.currentHostPeerId){
@@ -224,11 +224,11 @@ export function init() {
       ui.updateStatus(`Turno del ${player.getPlayerName(startPlayer)}`);
     }
 
-    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) { 
+    if (state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon) { // Check if it's CPU's turn
       ui.setBoardClickable(false);
       setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else { 
-      ui.setBoardClickable(true); // Board is clickable for human player
+      ui.setBoardClickable(true); 
       showEasyModeHint();
     }
   }
@@ -259,7 +259,7 @@ export function makeMove(idx, sym) {
   const newBoard = [...state.board];
   newBoard[idx] = sym;
   state.setBoard(newBoard);
-  ui.updateCellUI(idx, sym); // This will mark the cell as 'disabled' initially
+  ui.updateCellUI(idx, sym); 
   sound.playSound('move');
 
   const winCombo = checkWin(sym, newBoard);
@@ -270,15 +270,13 @@ export function makeMove(idx, sym) {
     if (totalPiecesOnBoard === state.MAX_PIECES_PER_PLAYER * 2) { 
       state.setGamePhase(state.GAME_PHASES.MOVING);
       console.log(`makeMove: Game phase changed to MOVING.`);
-      // Additional polish: ensure UI clickability is updated immediately after phase change
-      // This is important if the current player needs to act right away in the new phase.
-      // The call to switchPlayer() will handle setting clickability for the *next* player.
-      // If the current player (who just made the move that triggered phase change) is to act again,
-      // this might need adjustment, but typically switchPlayer follows.
-      // The current logic is: P2 places 3rd piece -> phase becomes MOVING -> switchPlayer makes it P1's turn.
-      // P1 receives full_state_update and their board becomes clickable.
-      // For the *sender* of the move that changes phase (P2 here), their board should become unclickable if it's P1's turn.
-      // This is handled after switchPlayer below.
+      // Additional polish, as suggested by AI:
+      // This call ensures that if the current player (who just made the move causing phase change)
+      // needs to interact immediately, or if the board appearance needs immediate update
+      // based on the new phase and current player, it happens.
+      // However, switchPlayer() will be called next and will also call setBoardClickable.
+      // This ensures the UI reflects current player's pieces correctly if they are to move again.
+      if (state.gameActive) ui.setBoardClickable(true);
     }
   } else if (checkDraw(newBoard)) { 
     endDraw();
@@ -286,20 +284,18 @@ export function makeMove(idx, sym) {
   }
 
   switchPlayer(); 
-  updateAllUITogglesHandler(); // Update all menu buttons etc.
+  updateAllUITogglesHandler();
 
-  // Determine board clickability for the player whose turn it now is.
   const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
-  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.gameP2Icon;
+  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon; // Check against opponent
 
   if (state.gameActive) {
     if (isCPUPlaying) {
         ui.setBoardClickable(false);
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-    } else if (isMyTurnNow) { // My turn (local, or remote and my turn)
-        ui.setBoardClickable(true);
-        // showEasyModeHint(); // Already called in switchPlayer if applicable
-    } else { // Remote and not my turn
+    } else if (isMyTurnNow) { 
+        ui.setBoardClickable(true); // Ensure this uses the new logic
+    } else { 
         ui.setBoardClickable(false);
     }
   }
@@ -329,8 +325,8 @@ export function movePiece(fromIdx, toIdx, sym) {
   newBoard[toIdx]   = sym;
   newBoard[fromIdx] = null;
   state.setBoard(newBoard);
-  ui.updateCellUI(toIdx, sym); // This will mark 'toIdx' as disabled initially
-  ui.updateCellUI(fromIdx, null); // This will mark 'fromIdx' as enabled (empty) initially
+  ui.updateCellUI(toIdx, sym); 
+  ui.updateCellUI(fromIdx, null); 
   sound.playSound('move');
   state.setSelectedPieceIndex(null); 
   ui.clearSelectedPieceHighlight();  
@@ -344,7 +340,7 @@ export function movePiece(fromIdx, toIdx, sym) {
   updateAllUITogglesHandler();
 
   const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
-  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.gameP2Icon;
+  const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon; // Check against opponent
 
   if (state.gameActive) {
     if (isCPUPlaying) {
@@ -352,8 +348,7 @@ export function movePiece(fromIdx, toIdx, sym) {
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else if (isMyTurnNow) {
         ui.setBoardClickable(true); // Key call: Make board clickable for the current player
-        // showEasyModeHint(); // Already called in switchPlayer
-    } else { // Remote and not my turn
+    } else { 
         ui.setBoardClickable(false);
     }
   }
@@ -367,7 +362,7 @@ export function endGame(winnerSym, winningCells) {
   console.log(`gameLogic.endGame: Winner ${winnerSym}`);
   state.setGameActive(false);
   state.setGamePhase(state.GAME_PHASES.GAME_OVER); 
-  ui.setBoardClickable(false); // Board should not be clickable when game is over
+  ui.setBoardClickable(false); 
   ui.clearSuggestedMoveHighlight();
   ui.clearSelectedPieceHighlight(); 
   ui.launchConfetti();
@@ -403,7 +398,7 @@ export function endDraw() {
   console.log("gameLogic.endDraw");
   state.setGameActive(false);
   state.setGamePhase(state.GAME_PHASES.GAME_OVER); 
-  ui.setBoardClickable(false); // Board should not be clickable
+  ui.setBoardClickable(false); 
   ui.clearSuggestedMoveHighlight();
   ui.clearSelectedPieceHighlight();
   ui.playDrawAnimation();
