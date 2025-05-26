@@ -57,7 +57,8 @@ const peerJsCallbacks = {
             state.setOpponentPlayerIcon(data.icon);
             console.log("PeerConnection: Opponent info updated:", state.opponentPlayerName, state.opponentPlayerIcon);
             player.determineEffectiveIcons();
-            ui.updateScoreboard(); // THIS IS LINE 62 - Corrected to call ui.updateScoreboard()
+            // Ensure this is the line the error refers to (around line 62)
+            ui.updateScoreboard(); // CORRECTED: Call ui.updateScoreboard directly
 
             if (state.gameActive) {
                 ui.updateStatus(state.isMyTurnInRemote ?
@@ -81,18 +82,14 @@ const peerJsCallbacks = {
              return;
         }
 
-        // Logic for 'move', 'restart_request', 'restart_ack'
-        if (data.type === 'move') { // Generic 'move' type from original code.
-            // This needs to be more specific for 3-Piezas MOVING phase.
-            // For now, assuming data.index is for placement (Classic or 3-Piezas PLACING)
-            // or data.from/data.to for 3-Piezas MOVING
+        if (data.type === 'move') {
             if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.MOVING) {
                 if (typeof data.from === 'number' && typeof data.to === 'number') {
                     handleRemoteSlide(data.from, data.to);
                 } else {
                     console.warn("PeerConnection: Received 'move' for 3-Piece MOVING phase without from/to data.", data);
                 }
-            } else if (typeof data.index === 'number') { // Placement for Classic or 3-Piece PLACING
+            } else if (typeof data.index === 'number') {
                  handleRemotePlacement(data.index);
             } else {
                 console.warn("PeerConnection: Received 'move' without valid index or from/to.", data);
