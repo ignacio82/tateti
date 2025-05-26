@@ -1,8 +1,4 @@
-// gameLogic.js - Applying new phase derivation logic
-// ─────────────────────────────────────────────────────────────────────────────
-// Core mechanics for both Classic and "3 Piezas" variants of Ta-Te-Ti Deluxe
-// ─────────────────────────────────────────────────────────────────────────────
-
+// gameLogic.js - Focused fix for phase transition and piece limits
 import * as state   from './state.js';
 import * as ui      from './ui.js';
 import * as player  from './player.js';
@@ -11,52 +7,19 @@ import { calculateBestMove,
          cpuMove,
          cpuMoveThreePiece,
          calculateBestSlideForHint } from './cpu.js';
-// peerConnection import removed as it's not directly used by gameLogic itself for sending,
-// but gameLogic functions are called by peerConnection handlers.
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ New Helper: boardToPhase                                 │
-   ╰──────────────────────────────────────────────────────────╯ */
-// This function determines the game phase based on the board state for 3-Pieces mode.
-// For Classic mode, or if the game is already over, it doesn't change the phase.
-export function boardToPhase(board, variant, currentPhaseFromState) {
-  if (currentPhaseFromState === state.GAME_PHASES.GAME_OVER) {
-    return state.GAME_PHASES.GAME_OVER; // Once game is over, phase doesn't change back
-  }
-  if (variant !== state.GAME_VARIANTS.THREE_PIECE) {
-    // For Classic Tic-Tac-Toe, there's no explicit 'MOVING' phase based on piece count.
-    // The phase is implicitly 'PLACING' until game over.
-    // We can return the current phase or a defined phase for classic if needed.
-    // For now, let's assume classic mode doesn't use this logic to change phase.
-    return currentPhaseFromState; // Or state.GAME_PHASES.PLACING if game is active
-  }
+// We are removing boardToPhase from here for now, to simplify and focus on direct logic in makeMove.
+// If needed, it can be reintroduced, but let's ensure the core transition works first.
 
-  const totalPieces = board.filter(Boolean).length; // Counts non-null/non-empty cells
-
-  if (totalPieces < (state.MAX_PIECES_PER_PLAYER * 2)) {
-    return state.GAME_PHASES.PLACING;
-  } else {
-    return state.GAME_PHASES.MOVING;
-  }
-}
-
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 1. Delegates that game.js can override                  │
-   ╰──────────────────────────────────────────────────────────╯ */
 let cpuMoveHandler = () => console.warn('cpuMoveHandler not set');
 export const setCpuMoveHandler = h => (cpuMoveHandler = h);
-
 let _updateScoreboardHandler = () => ui.updateScoreboard();
 export const setUpdateScoreboardHandler = h => (_updateScoreboardHandler = h);
 const updateScoreboardHandler = () => _updateScoreboardHandler();
-
 let _updateAllUITogglesHandler = () => ui.updateAllUIToggleButtons();
 export const setUpdateAllUITogglesHandler = h => (_updateAllUITogglesHandler = h);
 export const updateAllUITogglesHandler = () => _updateAllUITogglesHandler();
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 2. Utility helpers                                      │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function showEasyModeHint() {
   ui.clearSuggestedMoveHighlight();
   if (
@@ -126,9 +89,6 @@ export function hasValidMoves(sym, board) {
   return false;
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 3. Draw detection                                       │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function checkDraw(board = state.board) {
   if (!state.gameActive) return false;
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE &&
@@ -148,11 +108,8 @@ export function checkDraw(board = state.board) {
   );
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 4. Turn switch & status prompts                         │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function switchPlayer() {
-  const capturedPhaseBeforeSwitch = state.gamePhase; // This should be the already-updated phase
+  const capturedPhaseBeforeSwitch = state.gamePhase;
   console.log(`gameLogic.switchPlayer: Phase captured before switch: ${capturedPhaseBeforeSwitch}. Current player: ${state.currentPlayer}. Timestamp: ${new Date().toISOString()}`);
 
   state.setCurrentPlayer(
@@ -161,19 +118,19 @@ export function switchPlayer() {
   state.setSelectedPieceIndex(null);
   ui.clearSelectedPieceHighlight();
 
-  state.setGamePhase(capturedPhaseBeforeSwitch); // Restore/maintain the phase
+  state.setGamePhase(capturedPhaseBeforeSwitch); // Restore the phase that was set before switchPlayer
   console.log(`gameLogic.switchPlayer: Phase restored after switch: ${state.gamePhase}. New current player: ${state.currentPlayer}. Timestamp: ${new Date().toISOString()}`);
 
   let statusMessage = '';
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
       if (state.gamePhase === state.GAME_PHASES.MOVING) {
           statusMessage = `${player.getPlayerName(state.currentPlayer)}: Selecciona tu pieza para mover.`;
-          if (checkDraw(state.board)) { endDraw(); return; }
+          if (checkDraw(state.board)) { endDraw(); return; } // checkDraw should be after status is determined for current player
       } else if (state.gamePhase === state.GAME_PHASES.PLACING) {
           const placedCount = state.board.filter(s => s === state.currentPlayer).length;
           statusMessage = `${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${Math.min(placedCount + 1, state.MAX_PIECES_PER_PLAYER)}/${state.MAX_PIECES_PER_PLAYER}).`;
       }
-  } else {
+  } else { // Classic
       statusMessage = `Turno del ${player.getPlayerName(state.currentPlayer)}`;
   }
   ui.updateStatus(statusMessage);
@@ -187,9 +144,6 @@ export function switchPlayer() {
   }
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 5. Game initialisation / reset                          │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function init() {
   console.log(`gameLogic.init() called. Timestamp: ${new Date().toISOString()}`);
   ui.removeConfetti();
@@ -201,69 +155,56 @@ export function init() {
   state.setBoard(Array(9).fill(null));
   state.setGameActive(false);
   player.determineEffectiveIcons();
-
-  // After reset, explicitly set phase based on board (though it will be PLACING from reset)
-  // This is more for consistency if init was ever called mid-game (which it shouldn't be for this purpose)
-  state.setGamePhase(boardToPhase(state.board, state.gameVariant, state.gamePhase));
-  console.log(`gameLogic.init(): Phase set after reset to: ${state.gamePhase}. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
-
+  
+  // gamePhase is PLACING from resetGameFlowState
+  console.log(`gameLogic.init(): Phase is: ${state.gamePhase} (from reset). Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
 
   if (state.pvpRemoteActive && state.gamePaired) {
     console.log(`gameLogic.init(): PVP Remote & Paired. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
-    state.setCurrentPlayer(state.gameP1Icon);
+    state.setCurrentPlayer(state.gameP1Icon); // Host (P1) typically starts or determined by whoGoesFirst settings if implemented for P2P
     state.setIsMyTurnInRemote(state.currentPlayer === state.myEffectiveIcon);
-    // Status update will use the (now confirmed) correct phase from boardToPhase if called by switchPlayer or makeMove
-    ui.updateStatus(
-      state.isMyTurnInRemote
-        ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}` // Initial status will be based on current player and phase
-        : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`
-    );
-    // Further refine status message based on phase after player is set
+    
+    let initialStatusMsg;
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
         const placed = state.board.filter(s => s === state.currentPlayer).length;
-        const statusMsg = `${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${Math.min(placed + 1, state.MAX_PIECES_PER_PLAYER)}/${state.MAX_PIECES_PER_PLAYER}).`;
-        ui.updateStatus(state.isMyTurnInRemote ? statusMsg : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`);
+        initialStatusMsg = `${player.getPlayerName(state.currentPlayer)}: Coloca tu pieza (${Math.min(placed + 1, state.MAX_PIECES_PER_PLAYER)}/${state.MAX_PIECES_PER_PLAYER}).`;
+        if (!state.isMyTurnInRemote) {
+            initialStatusMsg = `Esperando a ${player.getPlayerName(state.currentPlayer)}...`;
+        }
+    } else {
+        initialStatusMsg = state.isMyTurnInRemote
+            ? `Tu Turno ${player.getPlayerName(state.currentPlayer)}`
+            : `Esperando a ${player.getPlayerName(state.currentPlayer)}...`;
     }
-
-
+    ui.updateStatus(initialStatusMsg);
     ui.setBoardClickable(state.isMyTurnInRemote);
     state.setGameActive(true);
+
   } else if (state.pvpRemoteActive && !state.gamePaired) {
-    // ... (no changes to this block's logic beyond logs)
     console.log(`gameLogic.init(): PVP Remote & NOT Paired. Timestamp: ${new Date().toISOString()}`);
-    ui.setBoardClickable(false);
-    state.setGameActive(false);
-     if (state.iAmPlayer1InRemote && state.currentHostPeerId) {
+    ui.setBoardClickable(false); state.setGameActive(false);
+    if (state.iAmPlayer1InRemote && state.currentHostPeerId) {
         ui.updateStatus(`Comparte el enlace o ID: ${state.currentHostPeerId}`);
-         const desiredBaseUrl = 'https://tateti.martinez.fyi';
-         const gameLink = `${desiredBaseUrl}/?room=${state.currentHostPeerId}`;
-         ui.displayQRCode(gameLink);
-    } else if (!state.iAmPlayer1InRemote && state.currentHostPeerId){
+        const gameLink = `https://tateti.martinez.fyi/?room=${state.currentHostPeerId}`;
+        ui.displayQRCode(gameLink);
+    } else if (!state.iAmPlayer1InRemote && state.currentHostPeerId) {
         ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);
     } else if (state.iAmPlayer1InRemote && !state.currentHostPeerId) {
         ui.updateStatus("Estableciendo conexión como Host...");
-    } else {
-        ui.updateStatus("Modo Remoto: Esperando conexión.");
-    }
+    } else { ui.updateStatus("Modo Remoto: Esperando conexión."); }
   } else { // Local or CPU game
     console.log(`gameLogic.init(): Local or CPU game. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
     state.setGameActive(true);
     let startPlayer = state.gameP1Icon;
     if (state.whoGoesFirstSetting === 'random') {
       startPlayer = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
-    } else if (
-      state.whoGoesFirstSetting === 'loser' &&
-      state.previousGameExists &&
-      state.lastWinner !== null
-    ) {
+    } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner !== null) {
       startPlayer = state.lastWinner === state.gameP1Icon ? state.gameP2Icon : state.gameP1Icon;
     } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner === null) {
       startPlayer = state.gameP1Icon;
     }
     state.setCurrentPlayer(startPlayer);
 
-    // Initial phase is PLACING from resetGameFlowState, then confirmed by boardToPhase.
-    // Status update based on current player and derived phase:
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
       const placedCount = state.board.filter(s => s === startPlayer).length;
       ui.updateStatus(`${player.getPlayerName(startPlayer)}: Coloca tu pieza (${Math.min(placedCount + 1, state.MAX_PIECES_PER_PLAYER)}/${state.MAX_PIECES_PER_PLAYER}).`);
@@ -275,54 +216,64 @@ export function init() {
       ui.setBoardClickable(false);
       setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
     } else {
-      ui.setBoardClickable(true);
-      showEasyModeHint();
+      ui.setBoardClickable(true); showEasyModeHint();
     }
   }
-
-  updateAllUITogglesHandler();
-  updateScoreboardHandler();
-
+  updateAllUITogglesHandler(); updateScoreboardHandler();
   if (sound.getAudioContext()?.state === 'running' && state.gameActive && !(state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote)) {
     sound.playSound('reset');
   }
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 6. Placement phase (Classic + 3-Piezas PLACING)         │
-   ╰──────────────────────────────────────────────────────────╯ */
-export function makeMove(idx, sym) {
+export function makeMove(idx, sym) { // sym is the icon of the player making the move
+  console.log(`gameLogic.makeMove: CALLED by ${sym} for cell ${idx}. Current phase: ${state.gamePhase}. Timestamp: ${new Date().toISOString()}`);
   if (state.board[idx] != null || !state.gameActive) {
+    console.log(`gameLogic.makeMove: Move rejected (cell occupied or game not active).`);
     return false;
   }
-  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
+
+  // **MODIFIED/ENHANCED PIECE LIMIT CHECK (for Issue 1: P2 placing 4th piece)**
+  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
+    // This check applies regardless of current gamePhase, as a defense.
+    // `sym` is the player attempting to place.
     const tokensOnBoardBySymbol = state.board.filter(s => s === sym).length;
     if (tokensOnBoardBySymbol >= state.MAX_PIECES_PER_PLAYER) {
+        // If already 3 pieces, a "placement" (makeMove) is illegal.
+        // This situation implies gamePhase might be wrongly 'PLACING' for this player's turn.
+        console.warn(`gameLogic.makeMove: Player ${sym} attempted to place piece ${tokensOnBoardBySymbol + 1} (already has ${tokensOnBoardBySymbol}). This should only happen in PLACING phase AND if they have < ${state.MAX_PIECES_PER_PLAYER} pieces. Current phase: ${state.gamePhase}. Move rejected.`);
+        // Potentially add a UI message to the user here if this happens often.
         return false;
     }
   }
 
+
   const newBoard = [...state.board];
   newBoard[idx] = sym;
-  state.setBoard(newBoard); // Board is updated
+  state.setBoard(newBoard);
   ui.updateCellUI(idx, sym);
   sound.playSound('move');
 
-  // ** NEW: Determine phase from board state IMMEDIATELY after board update **
-  const newPhase = boardToPhase(state.board, state.gameVariant, state.gamePhase);
-  if (newPhase !== state.gamePhase) {
-    console.log(`gameLogic.makeMove: Phase changing from ${state.gamePhase} to ${newPhase} based on boardToPhase after move by ${sym}. Timestamp: ${new Date().toISOString()}`);
-    state.setGamePhase(newPhase);
-  } else {
-    console.log(`gameLogic.makeMove: Phase remains ${state.gamePhase} based on boardToPhase after move by ${sym}. Timestamp: ${new Date().toISOString()}`);
+  // **REFINED PHASE TRANSITION LOGIC (for original bug fix)**
+  let phaseActuallyChangedThisTurn = false;
+  if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase === state.GAME_PHASES.PLACING) {
+    const totalPiecesOnBoard = newBoard.filter(p => p !== null).length;
+    console.log(`gameLogic.makeMove: In 3-Piece PLACING. Total pieces on board now: ${totalPiecesOnBoard}. Timestamp: ${new Date().toISOString()}`);
+    if (totalPiecesOnBoard >= (state.MAX_PIECES_PER_PLAYER * 2)) { // Should be exactly 6 for transition
+      console.log(`gameLogic.makeMove: Transitioning to MOVING phase. totalPieces: ${totalPiecesOnBoard}. Timestamp: ${new Date().toISOString()}`);
+      state.setGamePhase(state.GAME_PHASES.MOVING);
+      phaseActuallyChangedThisTurn = true;
+    }
   }
+  console.log(`gameLogic.makeMove: After potential phase change. Current state.gamePhase: ${state.gamePhase}. Timestamp: ${new Date().toISOString()}`);
 
-  const winCombo = checkWin(sym, state.board); // Check win on the updated board
+
+  const winCombo = checkWin(sym, state.board);
   if (winCombo) {
+    console.log(`gameLogic.makeMove: Win detected for ${sym}. Timestamp: ${new Date().toISOString()}`);
     endGame(sym, winCombo); state.incrementTurnCounter(); return true;
   }
-  // Check draw only if no win
-  if (checkDraw(state.board)) { // Check draw on the updated board
+  if (checkDraw(state.board)) {
+    console.log(`gameLogic.makeMove: Draw detected. Timestamp: ${new Date().toISOString()}`);
     endDraw(); state.incrementTurnCounter(); return true;
   }
 
@@ -332,80 +283,71 @@ export function makeMove(idx, sym) {
 
   updateAllUITogglesHandler();
 
-  const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
   const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon;
-
   if (state.gameActive) {
     if (isCPUPlaying) {
         ui.setBoardClickable(false);
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-    } else if (isMyTurnNow) {
+    } else { // Human player's turn (local or P2P)
         ui.setBoardClickable(true);
-        showEasyModeHint();
-    } else {
-        ui.setBoardClickable(false);
+        if (!state.pvpRemoteActive || state.isMyTurnInRemote) { // Show hint if it's my turn locally or in P2P
+             showEasyModeHint();
+        }
     }
   }
   
-  // No longer need the old phaseChanged logic here as phase is derived directly.
-  // The sender's UI status for remote game is handled by switchPlayer's status update.
-
   state.incrementTurnCounter();
   console.log(`gameLogic.makeMove: Turn counter incremented to ${state.turnCounter} at end of function for move by ${sym}. Timestamp: ${new Date().toISOString()}`);
   return true;
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 7. Moving phase (3-Piezas MOVING)                       │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function movePiece(fromIdx, toIdx, sym) {
-  console.log(`gameLogic.movePiece: Attempt by ${sym} from ${fromIdx} to ${toIdx}. GameActive=${state.gameActive}, Variant=${state.gameVariant}, Phase=${state.gamePhase}. Timestamp: ${new Date().toISOString()}`);
-
-  if (!state.gameActive || state.gameVariant !== state.GAME_VARIANTS.THREE_PIECE || state.gamePhase !== state.GAME_PHASES.MOVING) {
-    console.warn("movePiece Rejected: Pre-conditions not met."); return false;
+  console.log(`gameLogic.movePiece: CALLED by ${sym} from ${fromIdx} to ${toIdx}. Current phase: ${state.gamePhase}. Timestamp: ${new Date().toISOString()}`);
+  if (!state.gameActive) { console.warn("movePiece Rejected: Game not active."); return false; }
+  if (state.gameVariant !== state.GAME_VARIANTS.THREE_PIECE) { console.warn("movePiece Rejected: Not 3-Piece variant."); return false; }
+  // **CRITICAL CHECK for Issue 1**: Ensure this is only called in MOVING phase.
+  // handleCellClick in eventListeners.js should primarily enforce this.
+  if (state.gamePhase !== state.GAME_PHASES.MOVING) {
+    console.error(`gameLogic.movePiece: FATAL: Called when gamePhase is ${state.gamePhase}, not MOVING. This indicates a flaw in handleCellClick routing.`);
+    return false;
   }
-  if (state.board[fromIdx] !== sym || state.board[toIdx] !== null || !areCellsAdjacent(fromIdx, toIdx)) {
-    console.warn("movePiece Rejected: Invalid move conditions."); return false;
+
+  if (state.board[fromIdx] !== sym) { console.warn(`movePiece Rejected: Piece at fromIdx ${fromIdx} (${state.board[fromIdx]}) is not ${sym}.`); return false; }
+  if (state.board[toIdx] !== null) { console.warn(`movePiece Rejected: Cell at toIdx ${toIdx} (${state.board[toIdx]}) is not empty.`); return false; }
+  if (!areCellsAdjacent(fromIdx, toIdx)) {
+    console.warn(`movePiece Rejected: Cells ${fromIdx} and ${toIdx} are not adjacent.`); return false;
   }
 
   const newBoard = [...state.board];
-  newBoard[toIdx]   = sym;
-  newBoard[fromIdx] = null;
-  state.setBoard(newBoard); // Board is updated
-  ui.updateCellUI(toIdx, sym);
-  ui.updateCellUI(fromIdx, null);
+  newBoard[toIdx]   = sym; newBoard[fromIdx] = null;
+  state.setBoard(newBoard);
+  ui.updateCellUI(toIdx, sym); ui.updateCellUI(fromIdx, null);
   sound.playSound('move');
-  state.setSelectedPieceIndex(null);
-  ui.clearSelectedPieceHighlight();
+  state.setSelectedPieceIndex(null); ui.clearSelectedPieceHighlight();
   console.log(`movePiece: Successful move by ${sym} from ${fromIdx} to ${toIdx}.`);
-
-  // Note: boardToPhase won't change phase from MOVING back to PLACING unless pieces are removed,
-  // which doesn't happen in movePiece. So, phase should remain MOVING.
-  // state.setGamePhase(boardToPhase(state.board, state.gameVariant, state.gamePhase)); // Not strictly needed if phase can only be MOVING or GAME_OVER here
 
   const winCombo = checkWin(sym, state.board);
   if (winCombo) {
+    console.log(`gameLogic.movePiece: Win detected for ${sym}. Timestamp: ${new Date().toISOString()}`);
     endGame(sym, winCombo); state.incrementTurnCounter(); return true;
   }
   if (checkDraw(state.board)) {
+    console.log(`gameLogic.movePiece: Draw detected. Timestamp: ${new Date().toISOString()}`);
     endDraw(); state.incrementTurnCounter(); return true;
   }
 
-  switchPlayer();
-  updateAllUITogglesHandler();
+  switchPlayer(); updateAllUITogglesHandler();
 
-  const isMyTurnNow = (state.pvpRemoteActive && state.isMyTurnInRemote) || !state.pvpRemoteActive;
   const isCPUPlaying = state.vsCPU && state.currentPlayer === state.opponentEffectiveIcon;
-
   if (state.gameActive) {
     if (isCPUPlaying) {
         ui.setBoardClickable(false);
         setTimeout(async () => { if (state.gameActive) await cpuMoveHandler(); }, 700 + Math.random() * 300);
-    } else if (isMyTurnNow) {
-        ui.setBoardClickable(true);
-        showEasyModeHint();
     } else {
-        ui.setBoardClickable(false);
+        ui.setBoardClickable(true);
+        if (!state.pvpRemoteActive || state.isMyTurnInRemote) {
+            showEasyModeHint();
+        }
     }
   }
   state.incrementTurnCounter();
@@ -413,40 +355,73 @@ export function movePiece(fromIdx, toIdx, sym) {
   return true;
 }
 
-/* ╭──────────────────────────────────────────────────────────╮
-   │ 8. Game-over helpers                                    │
-   ╰──────────────────────────────────────────────────────────╯ */
 export function endGame(winnerSym, winningCells) {
-  console.log(`gameLogic.endGame: Winner ${winnerSym}. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
+  console.log(`gameLogic.endGame: Winner symbol raw: '${winnerSym}'. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
   state.setGameActive(false);
-  state.setGamePhase(state.GAME_PHASES.GAME_OVER); // Explicitly set to GAME_OVER
+  state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false);
-  // ... (rest of endGame logic) ...
+  ui.clearSuggestedMoveHighlight();
+  ui.clearSelectedPieceHighlight();
+  
+  if (winnerSym) { // Check if winnerSym is truthy (not null, undefined, empty string)
+    ui.launchConfetti();
+    ui.highlightWinner(winningCells);
+    sound.playSound('win');
+    const winnerName = player.getPlayerName(winnerSym); // Get full name like "Jugador (❤️)"
+    console.log(`gameLogic.endGame: Winner name determined: '${winnerName}' for symbol '${winnerSym}'`);
+    ui.updateStatus(`${winnerName} GANA!`); // **MODIFIED for Issue 2**
+  } else {
+    // This case should ideally only be for draws, but a generic fallback.
+    // Draws are handled by endDraw(). If endGame is called with no winnerSym, it's an issue.
+    console.error(`gameLogic.endGame: Called with no winnerSymbol! This should be a draw or an error. Forcing 'Juego Terminado'.`);
+    ui.updateStatus('Juego terminado'); // Fallback, but ideally endDraw handles draws.
+  }
+
+  state.setLastWinner(winnerSym); // Store the raw winner symbol
+  state.setPreviousGameExists(true);
+
+  if (state.pvpRemoteActive || state.vsCPU) {
+    if (winnerSym === state.myEffectiveIcon) state.incrementMyWins();
+    else if (winnerSym === state.opponentEffectiveIcon) state.incrementOpponentWins();
+  } else { // Local PvP
+    if (winnerSym === state.gameP1Icon) state.incrementMyWins();
+    else if (winnerSym === state.gameP2Icon) state.incrementOpponentWins();
+  }
+
   localStorage.setItem('myWinsTateti', state.myWins.toString());
   localStorage.setItem('opponentWinsTateti', state.opponentWins.toString());
   updateScoreboardHandler();
 
-  if (state.pvpRemoteActive && state.gamePaired) {
-    console.log("endGame: Remote game ended. TC will be reset if a new game starts via init().");
-  } else if (!state.pvpRemoteActive) {
+  // For P2P, do not auto-restart. Let restart_request/ack handle it or manual restart.
+  if (!state.pvpRemoteActive) {
     console.log("endGame: Scheduling local/CPU restart. TC will be reset by init().");
     setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
+  } else {
+    console.log("endGame: P2P game ended. Winner declared. Waiting for restart action.");
   }
 }
 
 export function endDraw() {
   console.log(`gameLogic.endDraw. Current TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
   state.setGameActive(false);
-  state.setGamePhase(state.GAME_PHASES.GAME_OVER); // Explicitly set to GAME_OVER
+  state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false);
-  // ... (rest of endDraw logic) ...
+  ui.clearSuggestedMoveHighlight();
+  ui.clearSelectedPieceHighlight();
+  ui.playDrawAnimation();
+  sound.playSound('draw');
+  ui.updateStatus('¡EMPATE!');
+
+  state.incrementDraws();
+  state.setLastWinner(null);
+  state.setPreviousGameExists(true);
   localStorage.setItem('drawsTateti', state.draws.toString());
   updateScoreboardHandler();
 
-  if (state.pvpRemoteActive && state.gamePaired) {
-    console.log("endDraw: Remote game ended. TC will be reset if a new game starts via init().");
-  } else if (!state.pvpRemoteActive) {
+  if (!state.pvpRemoteActive) {
     console.log("endDraw: Scheduling local/CPU restart. TC will be reset by init().");
     setTimeout(init, state.AUTO_RESTART_DELAY_DRAW);
+  } else {
+     console.log("endDraw: P2P game ended in a draw. Waiting for restart action.");
   }
 }
