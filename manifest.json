@@ -1,12 +1,14 @@
 {
-  "name":       "Danielle's Ta-Te-Ti",
+  "name": "Danielle's Ta-Te-Ti",
   "short_name": "Ta-Te-Ti",
   "description": "Tic-Tac-Toe con unicornios, corazones y confeti ❤️🦄",
   "start_url": "./index.html",
-  "display": "fullscreen",
+  "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#ffc0cb",
   "theme_color": "#ff69b4",
   "lang": "es",
+  "categories": ["games", "entertainment"],
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -24,5 +26,8 @@
       "type": "image/png",
       "purpose": "maskable any"
     }
-  ]
+  ],
+  "prefer_related_applications": false,
+  "scope": "./",
+  "id": "tateti-game"
 }

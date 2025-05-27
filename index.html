@@ -2,7 +2,22 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- ENHANCED VIEWPORT - Disable zoom, scaling -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- PREVENT ZOOM ON INPUT FOCUS (iOS Safari) -->
+    <meta name="format-detection" content="telephone=no" />
+    
+    <!-- PWA DISPLAY PREFERENCES -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- SCREEN ORIENTATION - Prefer portrait -->
+    <meta name="screen-orientation" content="portrait" />
+    <meta name="orientation" content="portrait" />
+    
     <title>Danielle's Ta-Te-Ti</title>
 
     <link rel="manifest" href="manifest.json">
@@ -13,108 +28,120 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-    <div class="top-bar">
-        <button id="menu-toggle" class="icon-btn" aria-label="Menú">☰</button>
-        <button id="restart-icon" class="icon-btn" aria-label="Reiniciar"></button>
+    <!-- ORIENTATION MESSAGE -->
+    <div id="orientation-message">
+        <div class="rotate-icon">📱</div>
+        <h2>Por favor, gira tu dispositivo</h2>
+        <p>Este juego está optimizado para modo vertical</p>
     </div>
 
-    <h1>Ta-Te-Ti</h1>
-    <div id="status" aria-live="polite">Turno del 🦄 Unicornio</div>
-
-    <div id="game" role="grid" aria-label="Tablero de juego">
-        <div class="cell" role="button" aria-label="Celda 1" data-index="0"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 2" data-index="1"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 3" data-index="2"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 4" data-index="3"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 5" data-index="4"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 6" data-index="5"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 7" data-index="6"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 8" data-index="7"><span></span></div>
-        <div class="cell" role="button" aria-label="Celda 9" data-index="8"><span></span></div>
-    </div>
-
-    <div id="results">🦄 <span id="unicornWins">0</span> – ❤️ <span id="heartWins">0</span> – 🤝 <span id="draws">0</span></div>
-
-    <div id="qr-display-area" style="display:none;">
-        <div class="qr-modal-content">
-            <span class="qr-modal-close-btn" id="qrModalCloseBtn" aria-label="Cerrar">&times;</span>
-            <canvas id="qr-code-canvas" style="border: 1px solid var(--pink-light); border-radius: 8px;"></canvas>
-            <button id="copyHostIdBtn" class="std copy-id-btn" title="Click to copy Game Link">Copiar Enlace del Juego</button>
+    <!-- MAIN APP CONTAINER -->
+    <div id="app-container">
+        <div class="top-bar">
+            <button id="menu-toggle" class="icon-btn" aria-label="Menú">☰</button>
+            <button id="restart-icon" class="icon-btn" aria-label="Reiniciar">🔄</button>
         </div>
-    </div>
 
-    <nav id="side-menu" class="side-menu" aria-label="Opciones">
-        <div class="controls-group">
-            <div><span>Modo de Juego:</span></div>
-            <div class="mode" aria-label="Seleccionar modo">
-                <button id="pvpLocalBtn" class="std mode-btn active">Local</button>
-                <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
-                <button id="playRandomBtn" class="std mode-btn">Jugar con Alguien (Azar)</button> <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
-                <div id="threePieceWrapper" class="toggle-wrapper">
-                  <span class="toggle-title">3 Piezas</span>
-                  <label class="switch">
-                    <input type="checkbox" id="threePieceToggle" />
-                    <span class="slider round"></span>
-                  </label>
+        <h1>Ta-Te-Ti</h1>
+        <div id="status" aria-live="polite">Turno del 🦄 Unicornio</div>
+
+        <div id="game" role="grid" aria-label="Tablero de juego">
+            <div class="cell" role="button" aria-label="Celda 1" data-index="0"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 2" data-index="1"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 3" data-index="2"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 4" data-index="3"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 5" data-index="4"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 6" data-index="5"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 7" data-index="6"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 8" data-index="7"><span></span></div>
+            <div class="cell" role="button" aria-label="Celda 9" data-index="8"><span></span></div>
+        </div>
+
+        <div id="results">🦄 <span id="unicornWins">0</span> – ❤️ <span id="heartWins">0</span> – 🤝 <span id="draws">0</span></div>
+
+        <div id="qr-display-area" style="display:none;">
+            <div class="qr-modal-content">
+                <span class="qr-modal-close-btn" id="qrModalCloseBtn" aria-label="Cerrar">&times;</span>
+                <canvas id="qr-code-canvas" style="border: 1px solid var(--pink-light); border-radius: 8px;"></canvas>
+                <button id="copyHostIdBtn" class="std copy-id-btn" title="Click to copy Game Link">Copiar Enlace del Juego</button>
+            </div>
+        </div>
+
+        <nav id="side-menu" class="side-menu" aria-label="Opciones">
+            <div class="controls-group">
+                <div><span>Modo de Juego:</span></div>
+                <div class="mode" aria-label="Seleccionar modo">
+                    <button id="pvpLocalBtn" class="std mode-btn active">Local</button>
+                    <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                    <button id="playRandomBtn" class="std mode-btn">Jugar con Alguien (Azar)</button>
+                    <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+                    <div id="threePieceWrapper" class="toggle-wrapper">
+                      <span class="toggle-title">3 Piezas</span>
+                      <label class="switch">
+                        <input type="checkbox" id="threePieceToggle" />
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
                 </div>
-            </div>
 
-            <div id="player-customization" style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);">
-                <div style="text-align: center; margin-bottom: 5px; color: var(--pink-dark);"><span>Personalizar Jugador:</span></div>
-                <div><label for="playerNameInput" style="font-size:0.9em; color: var(--pink-dark);">Tu Nombre:</label></div>
-                <input type="text" id="playerNameInput" placeholder="Jugador" maxlength="15" style="width: 90%; padding: 8px; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--pink-light); box-sizing: border-box;">
+                <div id="player-customization" style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);">
+                    <div style="text-align: center; margin-bottom: 5px; color: var(--pink-dark);"><span>Personalizar Jugador:</span></div>
+                    <div><label for="playerNameInput" style="font-size:0.9em; color: var(--pink-dark);">Tu Nombre:</label></div>
+                    <input type="text" id="playerNameInput" placeholder="Jugador" maxlength="15" style="width: 90%; padding: 8px; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--pink-light); box-sizing: border-box;">
 
-                <div><label style="font-size:0.9em; color: var(--pink-dark);">Tu Icono:</label></div>
-                <div id="iconSelection" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 10px; padding: 5px;">
+                    <div><label style="font-size:0.9em; color: var(--pink-dark);">Tu Icono:</label></div>
+                    <div id="iconSelection" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 10px; padding: 5px;">
+                    </div>
+                    <button id="savePlayerPrefsBtn" class="std" style="width: 90%; box-sizing: border-box;">Guardar Preferencias</button>
                 </div>
-                <button id="savePlayerPrefsBtn" class="std" style="width: 90%; box-sizing: border-box;">Guardar Preferencias</button>
+                <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Dificultad CPU:</span></div>
+                <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;">
+                    <button id="easyBtn" class="std difficulty-btn">Fácil</button>
+                    <button id="mediumBtn" class="std difficulty-btn active">Normal</button>
+                    <button id="hardBtn" class="std difficulty-btn">Difícil</button>
+                </div>
+
+                <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Quién Empieza (Local/CPU):</span></div>
+                <div class="game-start-options" aria-label="Seleccionar quién empieza">
+                    <button id="player1StartsBtn" class="std start-option-btn">Jugador 1</button>
+                    <button id="randomStartsBtn" class="std start-option-btn">Aleatorio</button>
+                    <button id="loserStartsBtn" class="std start-option-btn">Perdedor</button>
+                </div>
+                <button id="changeSymbolsBtn" class="std" style="margin-top:10px;">Cambiar Símbolos (Predeterminados)</button>
             </div>
-            <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Dificultad CPU:</span></div>
-            <div class="difficulty" aria-label="Seleccionar dificultad" style="display:none;"> <button id="easyBtn" class="std difficulty-btn">Fácil</button>
-                <button id="mediumBtn" class="std difficulty-btn active">Normal</button>
-                <button id="hardBtn" class="std difficulty-btn">Difícil</button>
+            <div style="margin-top:auto; display:flex; justify-content:space-around; padding-top:20px;">
+                <button id="soundToggle" class="icon-btn" aria-label="Sonido">🔊</button>
+                <button id="themeToggle" class="icon-btn" aria-label="Tema">🌙</button>
             </div>
+        </nav>
 
-            <div style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);"><span>Quién Empieza (Local/CPU):</span></div>
-            <div class="game-start-options" aria-label="Seleccionar quién empieza">
-                <button id="player1StartsBtn" class="std start-option-btn">Jugador 1</button>
-                <button id="randomStartsBtn" class="std start-option-btn">Aleatorio</button>
-                <button id="loserStartsBtn" class="std start-option-btn">Perdedor</button>
-            </div>
-            <button id="changeSymbolsBtn" class="std" style="margin-top:10px;">Cambiar Símbolos (Predeterminados)</button>
-        </div>
-        <div style="margin-top:auto; display:flex; justify-content:space-around; padding-top:20px;">
-            <button id="soundToggle" class="icon-btn" aria-label="Sonido">🔊</button>
-            <button id="themeToggle" class="icon-btn" aria-label="Tema">🌙</button>
-        </div>
-    </nav>
+        <button id="restartBtn" aria-hidden="true" style="display:none;">Restart</button>
 
-    <button id="restartBtn" aria-hidden="true" style="display:none;">Restart</button>
+        <div id="statusOverlay" style="
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff4f6;
+            color: #ff1493;
+            border: 2px solid #ff69b4;
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            z-index: 1001;
+            display: none;
+            font-family: 'Bubblegum Sans', cursive;
+        ">Esperando el movimiento del otro jugador...</div>
+    </div>
 
-  <div id="statusOverlay" style="
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #fff4f6;
-    color: #ff1493;
-    border: 2px solid #ff69b4;
-    border-radius: 10px;
-    padding: 8px 16px;
-    font-size: 1.2rem;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    z-index: 1001;
-    display: none;
-    font-family: 'Bubblegum Sans', cursive;
-  ">Esperando el movimiento del otro jugador...</div>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<script src="peerjs-multiplayer.js"></script>
-<script src="main.js"></script>
-<script type="module" src="game.js"></script>
+    <script src="peerjs-multiplayer.js"></script>
+    <script src="main.js"></script>
+    <script src="mobile-optimizations.js"></script>
+    <script type="module" src="game.js"></script>
 </body>
 </html>
