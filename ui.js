@@ -12,6 +12,7 @@ export const statusDiv        = document.getElementById('status');
 
 export const pvpLocalBtn      = document.getElementById('pvpLocalBtn');
 export const hostGameBtn      = document.getElementById('hostGameBtn');
+export const playRandomBtn    = document.getElementById('playRandomBtn'); // ADDED: Missing export
 export const cpuBtn           = document.getElementById('cpuBtn');
 
 export const threePieceToggle = document.getElementById('threePieceToggle');
@@ -223,10 +224,17 @@ export function updateScoreboard(){
    ========================================================================= */
 export function updateAllUIToggleButtons(){
   /* clear main-mode buttons */
-  [pvpLocalBtn, hostGameBtn, cpuBtn].forEach(b=>b?.classList.remove('active'));
+  [pvpLocalBtn, hostGameBtn, playRandomBtn, cpuBtn].forEach(b=>b?.classList.remove('active'));
 
   if(state.pvpRemoteActive){
-    if(state.iAmPlayer1InRemote) hostGameBtn?.classList.add('active');
+    if(state.iAmPlayer1InRemote) {
+        hostGameBtn?.classList.add('active');
+    } else {
+        // For matchmaking scenarios, we might want to highlight playRandomBtn
+        // or have a different indicator. For now, let's not highlight any specific button
+        // when we're in a matched game as a joiner
+        playRandomBtn?.classList.add('active');
+    }
   }else if(state.vsCPU){
     cpuBtn?.classList.add('active');
   }else{ 
@@ -235,7 +243,6 @@ export function updateAllUIToggleButtons(){
 
   const showDiff = state.vsCPU; 
   if (difficultyDiv) difficultyDiv.style.display = showDiff ? 'flex' : 'none';
-
 
   if(showDiff && easyBtn && mediumBtn && hardBtn){ 
     [easyBtn,mediumBtn,hardBtn].forEach(b=>b.classList.remove('active'));
