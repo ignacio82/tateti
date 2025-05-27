@@ -1,4 +1,4 @@
-// eventListeners.js - Sync gameVariant and conditional broadcast
+// eventListeners.js - Fixed version with proper playRandomBtn handling
 import * as ui from './ui.js';
 import * as state from './state.js';
 import * as player from './player.js';
@@ -152,8 +152,10 @@ function changeSymbolsBtnHandler() {
 // Modified to accept an options object for additional handlers like onPlayRandom
 export function setupEventListeners(stopCb, options = {}) {
     mainStopAnyGameInProgressAndResetUICallback = stopCb;
+    
     ui.menuToggle?.addEventListener('click', ui.toggleMenu);
     document.addEventListener('click', e => ui.closeMenuIfNeeded(e.target));
+    
     ui.cells.forEach(cell => {
         cell.addEventListener('click', handleCellClick);
         cell.setAttribute('tabindex', '0');
@@ -161,6 +163,7 @@ export function setupEventListeners(stopCb, options = {}) {
             if (['Enter', ' '].includes(e.key)) { e.preventDefault(); cell.click(); }
         });
     });
+    
     ui.restartIcon?.addEventListener('click', () => {
         if (state.pvpRemoteActive && state.gamePaired) {
             peerConnection.sendPeerData({ type: 'restart_request' });
@@ -172,48 +175,64 @@ export function setupEventListeners(stopCb, options = {}) {
         if (!mainStopAnyGameInProgressAndResetUICallback) gameLogic.init(); // Fallback if stopCb is not main one
         ui.sideMenu?.classList.remove('open');
     });
+    
     ui.pvpLocalBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.(true);
-        state.setVsCPU(false); state.setPvpRemoteActive(false);
-        state.setGamePaired(false); gameLogic.init();
+        state.setVsCPU(false); 
+        state.setPvpRemoteActive(false);
+        state.setGamePaired(false); 
+        gameLogic.init();
     });
+    
     ui.threePieceToggle?.addEventListener('change', e => {
         const useThreePiece = e.target.checked;
         mainStopAnyGameInProgressAndResetUICallback?.(true);
         state.setGameVariant(useThreePiece ? state.GAME_VARIANTS.THREE_PIECE : state.GAME_VARIANTS.CLASSIC);
-        localStorage.setItem('tatetiGameVariant', state.gameVariant); gameLogic.init();
+        localStorage.setItem('tatetiGameVariant', state.gameVariant); 
+        gameLogic.init();
     });
+    
     ui.hostGameBtn?.addEventListener('click', () => {
         // stopAnyGameInProgressAndResetUICallback is called within initializePeerAsHost
         peerConnection.initializePeerAsHost(mainStopAnyGameInProgressAndResetUICallback);
     });
 
-    // Add listener for the new "Play Random" button
-    const playRandomBtn = document.getElementById('playRandomBtn'); // Get the button from ui.js if exported, or by ID
-    if (playRandomBtn && options.onPlayRandom) {
-        playRandomBtn.addEventListener('click', options.onPlayRandom);
-    }
+    // FIXED: Add listener for the "Play Random" button using the export from ui.js
+    ui.playRandomBtn?.addEventListener('click', () => {
+        if (options.onPlayRandom && typeof options.onPlayRandom === 'function') {
+            options.onPlayRandom();
+        } else {
+            console.warn('Play Random button clicked but no onPlayRandom handler provided');
+        }
+    });
 
     ui.cpuBtn?.addEventListener('click', () => {
         mainStopAnyGameInProgressAndResetUICallback?.(true);
-        state.setVsCPU(true); state.setPvpRemoteActive(false);
-        state.setGamePaired(false); gameLogic.init();
+        state.setVsCPU(true); 
+        state.setPvpRemoteActive(false);
+        state.setGamePaired(false); 
+        gameLogic.init();
     });
+    
     [ui.easyBtn, ui.mediumBtn, ui.hardBtn].forEach(btn => {
         btn?.addEventListener('click', e => {
-            state.setDifficulty(e.target.id.replace('Btn', '')); sound.playSound('move');
+            state.setDifficulty(e.target.id.replace('Btn', '')); 
+            sound.playSound('move');
             if (state.vsCPU && (!state.gameActive || state.board.every(c => c === null))) gameLogic.init();
             else if (state.vsCPU) ui.updateAllUIToggleButtons();
         });
     });
+    
     [ui.player1StartsBtn, ui.randomStartsBtn, ui.loserStartsBtn].forEach(btn => {
         btn?.addEventListener('click', e => {
             state.setWhoGoesFirstSetting(e.target.id.replace('StartsBtn', ''));
-            localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting); sound.playSound('move');
+            localStorage.setItem('whoGoesFirstSetting', state.whoGoesFirstSetting); 
+            sound.playSound('move');
             if ((!state.gameActive || state.board.every(c => c === null)) && !(state.pvpRemoteActive && state.gamePaired)) gameLogic.init();
             else ui.updateAllUIToggleButtons();
         });
     });
+    
     ui.themeToggle?.addEventListener('click', theme.toggleTheme);
     document.getElementById('soundToggle')?.addEventListener('click', sound.toggleSound);
     ui.changeSymbolsBtn?.addEventListener('click', changeSymbolsBtnHandler);
