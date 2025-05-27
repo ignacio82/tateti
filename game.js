@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
   gameLogic.setUpdateAllUITogglesHandler(ui.updateAllUIToggleButtons);
 
   function stopAnyGameInProgressAndResetUI(preserveMenu = false) {
-    matchmaking.leaveQueue(); // Ensure we leave matchmaking queue if active
+    matchmaking.leaveQueue();
     peerConnection.closePeerSession();
     state.setGameActive(false);
     state.resetRemoteState();
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ui.hideQRCode();
     ui.updateAllUIToggleButtons();
     if (ui.sideMenu && !preserveMenu && ui.sideMenu.classList.contains('open')) {
-        // Optionally close menu unless specified not to (e.g. if action was from menu)
+        // ui.toggleMenu(); // Decide if menu should auto-close
     }
   }
 
@@ -75,64 +75,37 @@ document.addEventListener('DOMContentLoaded', () => {
     player.determineEffectiveIcons
   );
 
-  // Initial PeerJS setup to get localPeerId early for matchmaking
-  // We're not connecting yet, just getting an ID.
-  // The peerJsCallbacks in peerConnection.js will handle onPeerOpen.
-  // We need to ensure getLocalPeerId() in peerConnection.js returns the ID once available.
-  // peerConnection.initializePeerAsHost() or Joiner() will call window.peerJsMultiplayer.init().
-  // For matchmaking, we need a way to init PeerJS without immediately deciding host/joiner.
-
-  // Let's adjust how PeerJS is initialized for matchmaking.
-  // It might be better to have a generic peer init that matchmaking can use.
-  // For now, we assume `peerConnection.getLocalPeerId()` will work after peerConnection methods are called.
-  // The `peerjs-multiplayer.js` `initPeerSession` is called by `peerConnection` functions.
-
-  // Attach event listeners (including the new matchmaking button listener)
   setupEventListeners(stopAnyGameInProgressAndResetUI, {
       onPlayRandom: async () => {
-          stopAnyGameInProgressAndResetUI(true); // Preserve menu if open
+          stopAnyGameInProgressAndResetUI(true);
           state.setVsCPU(false);
-          state.setPvpRemoteActive(true); // Set to true to indicate a P2P game
-          state.setIAmPlayer1InRemote(false); // Default to false, can be negotiated or set based on who connects
+          state.setPvpRemoteActive(true);
+          // state.setIAmPlayer1InRemote(false); // This will be determined later
           state.setGamePaired(false);
           ui.updateAllUIToggleButtons();
-          ui.showOverlay("Buscando oponente...");
+          ui.showOverlay("Iniciando conexión P2P para matchmaking...");
 
-          // Ensure PeerJS is initialized and we have an ID.
-          // A robust way is to ensure peerConnection.init() or similar is called
-          // and provides the local ID.
-          // For now, assuming peerConnection.getLocalPeerId() can retrieve it
-          // if a connection (even a dormant one to PeerServer) is established.
-          // If not, we might need a dedicated init step for PeerJS before matchmaking.
-
-          // Initialize a generic PeerJS session if one isn't active,
-          // just to get our PeerID from the PeerServer.
-          if (!peerConnection.getLocalPeerId() && window.peerJsMultiplayer?.init) {
-              console.log('[Game] Initializing PeerJS session for matchmaking ID...');
-              // Using a simplified init just to get an ID. The full callbacks are in peerConnection.js
-              // This is a bit of a workaround. Ideally, peerConnection.js would expose a
-              // simple "ensurePeerId" function.
-              window.peerJsMultiplayer.init(null, {
-                  onPeerOpen: (id) => {
-                      console.log('[Game] PeerJS ID for matchmaking:', id);
-                      // Now that we have the ID, join the queue
-                      joinSupabaseQueue(id);
-                  },
-                  onError: (err) => {
-                      console.error('[Game] PeerJS init error for matchmaking:', err);
-                      ui.showOverlay(`Error de PeerJS: ${err.type || 'Desconocido'}`);
-                      setTimeout(ui.hideOverlay, 3000);
-                      state.resetRemoteState();
-                      ui.updateAllUIToggleButtons();
+          peerConnection.ensurePeerInitialized({
+              onPeerOpen: (localId) => {
+                  console.log('[Game] PeerJS ID for matchmaking:', localId);
+                  if (localId) {
+                    joinSupabaseQueue(localId);
+                  } else {
+                    console.error('[Game] Failed to get PeerJS ID for matchmaking.');
+                    ui.showOverlay("Error: No se pudo obtener ID para matchmaking.");
+                    setTimeout(ui.hideOverlay, 3000);
+                    state.resetRemoteState();
+                    ui.updateAllUIToggleButtons();
                   }
-              });
-          } else if (peerConnection.getLocalPeerId()) {
-              joinSupabaseQueue(peerConnection.getLocalPeerId());
-          } else {
-              console.error('[Game] PeerJS multiplayer module not available for matchmaking.');
-              ui.showOverlay("Error: Módulo P2P no disponible.");
-              setTimeout(ui.hideOverlay, 3000);
-          }
+              },
+              onError: (err) => {
+                  console.error('[Game] PeerJS init error for matchmaking:', err);
+                  ui.showOverlay(`Error de PeerJS al iniciar: ${err.type || err.message || 'Desconocido'}`);
+                  setTimeout(ui.hideOverlay, 3000);
+                  state.resetRemoteState();
+                  ui.updateAllUIToggleButtons();
+              }
+          });
       }
   });
 
@@ -145,51 +118,41 @@ document.addEventListener('DOMContentLoaded', () => {
           onMatchFound: (opponentPeerId) => {
               ui.showOverlay(`¡Oponente encontrado! (${opponentPeerId}). Conectando...`);
               console.log(`[Game] Match found with ${opponentPeerId}. Attempting to connect.`);
-              // We are initiating the connection, so we act as the "joiner" in PeerJS terms.
-              // The other client is already listening due to their own peer.on('connection').
-              state.setPvpRemoteActive(true);
-              state.setIAmPlayer1InRemote(false); // Peer initiating connect is often P2
-              state.setCurrentHostPeerId(opponentPeerId); // Store opponent's ID as "host" to connect to
 
-              // Use peerConnection.initializePeerAsJoiner or a more direct connect method.
-              // initializePeerAsJoiner might do more than just connect (like prompting for ID).
-              // We need a way for peerConnection to connect if we already have the host ID.
-              // Let's assume initializePeerAsJoiner can take an ID and skip prompt.
-              // Or, better, peerConnection.connectToPeer(opponentPeerId) if available.
+              // Logic to determine who is P1 or P2 can be added here if needed.
+              // For example, the client that initiated the findMatch (this client)
+              // could be considered P2, and the one found P1.
+              // This needs to be consistent for how onConnectionOpen in peerConnection.js sets up the game.
+              // For now, peerConnection.js's onNewConnection (for P1) and onConnectionOpen (for P2 after connect)
+              // will establish roles. The client calling connectToDiscoveredPeer is effectively the "joiner".
+              state.setPvpRemoteActive(true); // Ensure P2P mode is active
+              // state.setIAmPlayer1InRemote(false); // Joiner is typically not P1 initially
+              state.setCurrentHostPeerId(opponentPeerId); // Store opponent's ID
 
-              // For now, let's refine how we connect.
-              // If peerJsMultiplayer.connect is available, we use it.
-              // The peerConnection.js callbacks (onConnectionOpen, etc.) will handle game setup.
-              if (window.peerJsMultiplayer?.connect) {
-                  // Ensure peerJsMultiplayer is initialized with our game's callbacks from peerConnection.js
-                  // This might mean peerConnection.js needs an init function that doesn't assume host/joiner role yet.
-                  // For now, assuming the existing callbacks in peerConnection.js are set up.
-                  window.peerJsMultiplayer.connect(opponentPeerId);
-              } else {
-                  console.error("[Game] peerJsMultiplayer.connect not available.");
-                  ui.showOverlay("Error al intentar conectar.");
-                  matchmaking.leaveQueue(); // Leave queue if connection fails early
-              }
-              // gameLogic.init() will be called by onConnectionOpen in peerConnection.js
+              peerConnection.connectToDiscoveredPeer(opponentPeerId);
+              // gameLogic.init() will be called by onConnectionOpen in peerConnection.js once connected
           },
           onError: (errMsg) => {
               ui.showOverlay(`Error de Matchmaking: ${errMsg}`);
               console.error('[Game] Matchmaking error:', errMsg);
-              setTimeout(ui.hideOverlay, 3000);
-              state.resetRemoteState();
-              ui.updateAllUIToggleButtons();
+              setTimeout(() => {
+                ui.hideOverlay();
+                stopAnyGameInProgressAndResetUI(); // Reset to a clean state
+                gameLogic.init(); // Re-initialize to default local mode or similar
+              }, 3000);
           },
           onTimeout: () => {
               ui.showOverlay("No se encontraron oponentes. Intenta de nuevo.");
               console.log('[Game] Matchmaking timed out.');
               // matchmaking.leaveQueue() is called internally by the matchmaking module on timeout
-              setTimeout(ui.hideOverlay, 3000);
-              state.resetRemoteState();
-              ui.updateAllUIToggleButtons();
+              setTimeout(() => {
+                ui.hideOverlay();
+                stopAnyGameInProgressAndResetUI(); // Reset to a clean state
+                gameLogic.init(); // Re-initialize to default local mode or similar
+              }, 3000);
           }
       });
   }
-
 
   /* ─────── Handle deep-link joins or normal startup ─────── */
   function checkUrlForRoomAndJoin() {
@@ -197,22 +160,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const roomId = urlParams.get('room');
 
     if (roomId) {
-      state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
-      localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
-      if (ui.threePieceToggle) ui.threePieceToggle.checked = false;
+      // Ensure PeerJS is initialized before attempting to join via URL
+      peerConnection.ensurePeerInitialized({
+        onPeerOpen: (localId) => {
+          console.log('[Game] PeerJS initialized for URL join, ID:', localId);
+          state.setGameVariant(state.GAME_VARIANTS.CLASSIC);
+          localStorage.setItem('tatetiGameVariant', state.GAME_VARIANTS.CLASSIC);
+          if (ui.threePieceToggle) ui.threePieceToggle.checked = false;
 
-      peerConnection.initializePeerAsJoiner(roomId, stopAnyGameInProgressAndResetUI);
-      window.history.replaceState({}, document.title, window.location.pathname);
+          peerConnection.initializePeerAsJoiner(roomId, stopAnyGameInProgressAndResetUI);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        },
+        onError: (err) => {
+          console.error('[Game] PeerJS init error for URL join:', err);
+          ui.showOverlay(`Error de PeerJS: ${err.type || 'No se pudo iniciar P2P para unirse.'}`);
+          // Fallback to normal init
+          gameLogic.init();
+        }
+      });
     } else {
-      gameLogic.init();
-      if (ui.sideMenu && !ui.sideMenu.classList.contains('open') &&
-          ! (state.pvpRemoteActive && !state.gamePaired && state.iAmPlayer1InRemote) ) {
-        // ui.toggleMenu(); // Decided against auto-opening menu for now
-      }
+      // Normal startup: Initialize PeerJS in a benign way first if not handling a URL room.
+      // This ensures getLocalPeerId() can return an ID if matchmaking is tried later
+      // without going through host/join specific initializations.
+      peerConnection.ensurePeerInitialized({
+        onPeerOpen: (id) => console.log('[Game] PeerJS session pre-initialized on load. ID:', id),
+        onError: (err) => console.warn('[Game] Benign PeerJS pre-init error:', err.type)
+      });
+      gameLogic.init(); // Standard game init
     }
   }
 
-  checkUrlForRoomAndJoin(); // Or call gameLogic.init() directly if no deep-linking for now
+  checkUrlForRoomAndJoin();
 });
 
 /* ────────────────────  PWA bootstrap  ─────────────────────── */
