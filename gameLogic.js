@@ -1,4 +1,4 @@
-// gameLogic.js - Applying "Other AI's" robust makeMove structure
+// gameLogic.js - Fixed endGame and endDraw functions for proper P2P restart
 import * as state   from './state.js';
 import * as ui      from './ui.js';
 import * as player  from './player.js';
@@ -7,7 +7,7 @@ import { calculateBestMove,
          cpuMove,
          cpuMoveThreePiece,
          calculateBestSlideForHint } from './cpu.js';
-import * as peerConnection from './peerConnection.js'; // Added for sending reset_game message
+import * as peerConnection from './peerConnection.js';
 
 // boardToPhase function (ensure this is robust)
 export function boardToPhase(board, variant, currentGlobalPhase) {
@@ -154,24 +154,42 @@ export function init() {
     else if(!state.iAmPlayer1InRemote&&state.currentHostPeerId){ui.updateStatus(`Intentando conectar a ${state.currentHostPeerId}...`);}
     else if(state.iAmPlayer1InRemote&&!state.currentHostPeerId){ui.updateStatus("Estableciendo conexión como Host...");}
     else{ui.updateStatus("Modo Remoto: Esperando conexión.");}
-  } else {
+  } else { // Local PvP or Vs CPU
     console.log(`gameLogic.init(): Local or CPU game. TC: ${state.turnCounter}.`); state.setGameActive(true);
-    let sPlayer=state.gameP1Icon; // Default starter
-    if (state.whoGoesFirstSetting === 'player1') sPlayer = state.gameP1Icon; // Explicitly P1
-    else if (state.whoGoesFirstSetting === 'random')sPlayer=Math.random()<0.5?state.gameP1Icon:state.gameP2Icon;
-    else if(state.whoGoesFirstSetting==='loser'&&state.previousGameExists&&state.lastWinner!==null)sPlayer=state.lastWinner===state.gameP1Icon?state.gameP2Icon:state.gameP1Icon;
-    else if(state.whoGoesFirstSetting==='loser'&&state.previousGameExists&&state.lastWinner===null)sPlayer=state.gameP1Icon; // If draw and loser starts, P1 starts
-    state.setCurrentPlayer(sPlayer);
+    let startingPlayer;
+    if (state.whoGoesFirstSetting === 'random') { //
+        startingPlayer = Math.random() < 0.5 ? state.gameP1Icon : state.gameP2Icon;
+    } else if (state.whoGoesFirstSetting === 'loser' && state.previousGameExists && state.lastWinner !== null) { //
+        startingPlayer = (state.lastWinner === state.gameP1Icon) ? state.gameP2Icon : state.gameP1Icon;
+    } else { // Default to P1 (gameP1Icon)
+        startingPlayer = state.gameP1Icon;
+    }
+    state.setCurrentPlayer(startingPlayer);
+    ui.updateStatus(`Turno del ${player.getPlayerName(state.currentPlayer)}`);
 
-    if(state.gameVariant===state.GAME_VARIANTS.THREE_PIECE&&state.gamePhase===state.GAME_PHASES.PLACING){
-      const pc=state.board.filter(s=>s===sPlayer).length;
-      ui.updateStatus(`${player.getPlayerName(sPlayer)}: Coloca tu pieza (${Math.min(pc+1,state.MAX_PIECES_PER_PLAYER)}/${state.MAX_PIECES_PER_PLAYER}).`);
-    }else{ui.updateStatus(`Turno del ${player.getPlayerName(sPlayer)}`);}
-    if(state.vsCPU&&state.currentPlayer===state.opponentEffectiveIcon){ui.setBoardClickable(false);setTimeout(async()=>{if(state.gameActive)await cpuMoveHandler();},700+Math.random()*300);}
-    else{ui.setBoardClickable(true);showEasyModeHint();}
+    if (state.vsCPU && state.currentPlayer === state.gameP2Icon) {
+        ui.setBoardClickable(false);
+        setTimeout(() => {
+            if(state.gameActive) cpuMoveHandler();
+            if(state.gameActive) ui.setBoardClickable(true);
+        }, 700 + Math.random() * 300);
+    } else {
+        ui.setBoardClickable(true);
+    }
   }
-  updateAllUITogglesHandler(); updateScoreboardHandler();
-  if(sound.getAudioContext()?.state==='running'&&state.gameActive&&!(state.pvpRemoteActive&&!state.gamePaired&&state.iAmPlayer1InRemote))sound.playSound('reset');
+
+  updateAllUITogglesHandler(); // Call the exported wrapper
+  updateScoreboardHandler(); // Call the exported wrapper
+
+  if(state.gameActive && !(state.pvpRemoteActive && !state.gamePaired)) {
+    // Check if audio context is ready before playing sound, or defer
+    if (sound.getAudioContext() && sound.getAudioContext().state === 'running') {
+        sound.playSound('reset');
+    } else {
+        console.log("Audio context not ready for init sound, will play on user gesture.");
+    }
+  }
+  if (ui.sideMenu && ui.sideMenu.classList.contains('open')) ui.sideMenu.classList.remove('open');
 }
 
 // Applying "Other AI's" suggested structure for makeMove
@@ -193,7 +211,7 @@ export function makeMove(idx, sym) { // sym is the player making the move
     state.setGamePhase(phaseDerivedFromBoardEarly);
   }
 
-  // ② If we’re no longer in PLACING (e.g., board already has 6 pieces for 3-Piece mode),
+  // ② If we're no longer in PLACING (e.g., board already has 6 pieces for 3-Piece mode),
   // makeMove should not proceed to place a piece. This is crucial for 3-Piece mode.
   if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE && state.gamePhase !== state.GAME_PHASES.PLACING) {
     console.warn(`gameLogic.makeMove: Attempt to place piece by ${sym} but current phase is ${state.gamePhase}. For 3-Pieces, makeMove is only for PLACING phase. Move rejected. Player should be moving a piece via movePiece.`);
@@ -317,21 +335,17 @@ export function endGame(winnerSym, winningCells) {
   localStorage.setItem('myWinsTateti',state.myWins.toString()); localStorage.setItem('opponentWinsTateti',state.opponentWins.toString());
   updateScoreboardHandler();
 
-  if (!state.pvpRemoteActive) { // For local or CPU games
+  if (!state.pvpRemoteActive || !state.gamePaired) {
+    // For local or CPU games - restart immediately
     console.log("endGame: Scheduling local/CPU restart.");
     setTimeout(init, state.AUTO_RESTART_DELAY_WIN);
-  } else { // For P2P games
-    console.log("endGame: P2P game ended. Winner declared. Scheduling automatic restart.");
-    // The winner message is already shown by ui.updateStatus.
-    // Schedule the reset process.
+  } else {
+    // For P2P games - DO NOT send reset_game message, just restart locally after delay
+    console.log("endGame: P2P game ended. Winner declared. Scheduling local restart only (no peer message).");
     setTimeout(() => {
-      if (state.gamePaired) { // Only send if still paired
-        console.log("endGame: Sending 'reset_game' message to peer.");
-        peerConnection.sendPeerData({ type: 'reset_game' });
-      }
-      console.log("endGame: Calling local init() for P2P automatic restart.");
-      init(); // Reset this client's game state
-    }, state.AUTO_RESTART_DELAY_WIN); // Use existing delay constant for win
+      console.log("endGame: Calling local init() for P2P restart.");
+      init(); // Just restart locally, don't send reset_game message
+    }, state.AUTO_RESTART_DELAY_WIN);
   }
 }
 
@@ -343,18 +357,16 @@ export function endDraw() {
   state.incrementDraws(); state.setLastWinner(null); state.setPreviousGameExists(true);
   localStorage.setItem('drawsTateti', state.draws.toString()); updateScoreboardHandler();
 
-  if (!state.pvpRemoteActive) { // For local or CPU games
+  if (!state.pvpRemoteActive || !state.gamePaired) {
+    // For local or CPU games - restart immediately
     console.log("endDraw: Scheduling local/CPU restart.");
     setTimeout(init, state.AUTO_RESTART_DELAY_DRAW);
-  } else { // For P2P games
-    console.log("endDraw: P2P game ended in a draw. Scheduling automatic restart.");
+  } else {
+    // For P2P games - DO NOT send reset_game message, just restart locally after delay
+    console.log("endDraw: P2P game ended in a draw. Scheduling local restart only (no peer message).");
     setTimeout(() => {
-      if (state.gamePaired) { // Only send if still paired
-        console.log("endDraw: Sending 'reset_game' message to peer.");
-        peerConnection.sendPeerData({ type: 'reset_game' });
-      }
-      console.log("endDraw: Calling local init() for P2P automatic restart after draw.");
-      init(); // Reset this client's game state
-    }, state.AUTO_RESTART_DELAY_DRAW); // Use existing delay constant for draw
+      console.log("endDraw: Calling local init() for P2P restart after draw.");
+      init(); // Just restart locally, don't send reset_game message
+    }, state.AUTO_RESTART_DELAY_DRAW);
   }
 }
