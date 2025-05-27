@@ -43,27 +43,28 @@
             <button id="copyHostIdBtn" class="std copy-id-btn" title="Click to copy Game Link">Copiar Enlace del Juego</button>
         </div>
     </div>
-    
+
     <nav id="side-menu" class="side-menu" aria-label="Opciones">
         <div class="controls-group">
             <div><span>Modo de Juego:</span></div>
             <div class="mode" aria-label="Seleccionar modo">
-                <button id="pvpLocalBtn" class="std mode-btn active">Local</button>  <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
-                <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
+                <button id="pvpLocalBtn" class="std mode-btn active">Local</button>
+                <button id="hostGameBtn" class="std mode-btn">Hostear Juego Remoto</button>
+                <button id="playRandomBtn" class="std mode-btn">Jugar con Alguien (Azar)</button> <button id="cpuBtn" class="std mode-btn">Jugador vs CPU</button>
                 <div id="threePieceWrapper" class="toggle-wrapper">
                   <span class="toggle-title">3 Piezas</span>
                   <label class="switch">
                     <input type="checkbox" id="threePieceToggle" />
                     <span class="slider round"></span>
                   </label>
-                </div>                
+                </div>
             </div>
 
             <div id="player-customization" style="margin-top: 15px; padding-top:10px; border-top: 1px solid var(--pink-light);">
                 <div style="text-align: center; margin-bottom: 5px; color: var(--pink-dark);"><span>Personalizar Jugador:</span></div>
                 <div><label for="playerNameInput" style="font-size:0.9em; color: var(--pink-dark);">Tu Nombre:</label></div>
                 <input type="text" id="playerNameInput" placeholder="Jugador" maxlength="15" style="width: 90%; padding: 8px; margin-bottom: 10px; border-radius: var(--radius); border: 1px solid var(--pink-light); box-sizing: border-box;">
-                
+
                 <div><label style="font-size:0.9em; color: var(--pink-dark);">Tu Icono:</label></div>
                 <div id="iconSelection" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 10px; padding: 5px;">
                 </div>
@@ -110,8 +111,10 @@
 
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <script src="peerjs-multiplayer.js"></script>
-<script src="main.js"></script> 
-<script type="module" src="game.js"></script> 
+<script src="main.js"></script>
+<script type="module" src="game.js"></script>
 </body>
 </html>
