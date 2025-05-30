@@ -68,6 +68,7 @@ export let previousGameExists = false;
 
 // ----------  SETTINGS  ----------
 export let soundEnabled = true;
+export let hapticsEnabled = true; // ADDED: Haptic feedback setting
 
 // ----------  CONSTANTS  ----------
 export const AUTO_RESTART_DELAY_WIN = 5000;
@@ -127,6 +128,7 @@ export function setWhoGoesFirstSetting(setting) { whoGoesFirstSetting = setting;
 export function setLastWinner(winner) { lastWinner = winner; }
 export function setPreviousGameExists(exists) { previousGameExists = exists; }
 export function setSoundEnabled(isEnabled) { soundEnabled = isEnabled; }
+export function setHapticsEnabled(isEnabled) { hapticsEnabled = isEnabled; } // ADDED: Mutator for haptics
 
 // NEW: Mutators for turnCounter
 export function incrementTurnCounter() {

@@ -36,12 +36,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const initialSoundDisabled = localStorage.getItem('soundDisabled') === 'true';
   state.setSoundEnabled(!initialSoundDisabled);
+  
+  const initialHapticsDisabled = localStorage.getItem('hapticsDisabled') === 'true'; // ADDED: Load haptics setting
+  state.setHapticsEnabled(!initialHapticsDisabled); // ADDED: Set initial haptics state
+
   state.setPreviousGameExists(state.myWins + state.opponentWins + state.draws > 0);
 
   /* ─────── Initialize subsystems ─────── */
   sound.setupAudio();
   theme.initializeTheme();
   ui.updateSoundToggleButton(state.soundEnabled);
+  ui.updateHapticsToggleButton(state.hapticsEnabled); // ADDED: Update haptics button on load
 
   gameLogic.setCpuMoveHandler(async () => {
     if (state.gameVariant === state.GAME_VARIANTS.THREE_PIECE) {
