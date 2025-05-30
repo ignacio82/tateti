@@ -24,6 +24,7 @@ export const hardBtn          = document.getElementById('hardBtn');
 
 export const themeToggle      = document.getElementById('themeToggle');
 export const soundToggle      = document.getElementById('soundToggle');
+export const hapticsToggle    = document.getElementById('hapticsToggle'); // ADDED: Haptics toggle button
 export const changeSymbolsBtn = document.getElementById('changeSymbolsBtn');
 
 export const player1StartsBtn = document.getElementById('player1StartsBtn');
@@ -274,16 +275,23 @@ export function updateAllUIToggleButtons(){
 
   updateThemeToggleButton(document.body.classList.contains('dark-theme'));
   updateSoundToggleButton(state.soundEnabled);
+  updateHapticsToggleButton(state.hapticsEnabled); // ADDED: Update haptics toggle
 }
 
 /* =========================================================================
-   Theme / sound glyph helpers
+   Theme / sound / haptics glyph helpers
    ========================================================================= */
 export const updateThemeToggleButton = isDark => {
   if(themeToggle) themeToggle.textContent = isDark ? '☀️' : '🌙';
 };
 export const updateSoundToggleButton = sndOn => {
   if(soundToggle) soundToggle.textContent = sndOn ? '🔊' : '🔇';
+};
+export const updateHapticsToggleButton = hapticsOn => { // ADDED: Function to update haptics button icon
+    // Using 📳 for "vibration mode" and 📴 for "vibration off" (conceptual)
+    // You might need to find better single character emojis if these don't render well everywhere.
+    // As a fallback, you could use text like "Vib: On" / "Vib: Off" or simpler icons.
+    if(hapticsToggle) hapticsToggle.textContent = hapticsOn ? '📳' : '📴';
 };
 
 /* =========================================================================

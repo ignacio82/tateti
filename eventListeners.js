@@ -234,7 +234,8 @@ export function setupEventListeners(stopCb, options = {}) {
     });
     
     ui.themeToggle?.addEventListener('click', theme.toggleTheme);
-    document.getElementById('soundToggle')?.addEventListener('click', sound.toggleSound);
+    ui.soundToggle?.addEventListener('click', sound.toggleSound); // Corrected: ui.soundToggle instead of document.getElementById
+    ui.hapticsToggle?.addEventListener('click', sound.toggleHaptics); // ADDED: Event listener for haptics toggle
     ui.changeSymbolsBtn?.addEventListener('click', changeSymbolsBtnHandler);
     document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 }

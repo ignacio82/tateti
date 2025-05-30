@@ -235,7 +235,9 @@ export function makeMove(idx, sym) { // sym is the player making the move
   console.log(`gameLogic.makeMove: Placing piece for ${sym} at ${idx}.`);
   const newBoard = [...state.board]; newBoard[idx] = sym;
   state.setBoard(newBoard);
-  ui.updateCellUI(idx, sym); sound.playSound('move');
+  ui.updateCellUI(idx, sym); 
+  sound.playSound('move');
+  sound.vibrate(sound.HAPTIC_PATTERNS.PLACE_PIECE); // ADDED: Haptic feedback for piece placement
 
   // ⑤ After a *successful* placement, update phase again from the new board state.
   //    This is important if this placement was the one to fill the board (e.g., 6th piece in 3-Piece).
@@ -290,7 +292,9 @@ export function movePiece(fromIdx, toIdx, sym) {
   }
   const newBoard = [...state.board]; newBoard[toIdx]=sym; newBoard[fromIdx]=null;
   state.setBoard(newBoard);
-  ui.updateCellUI(toIdx,sym); ui.updateCellUI(fromIdx,null); sound.playSound('move');
+  ui.updateCellUI(toIdx,sym); ui.updateCellUI(fromIdx,null); 
+  sound.playSound('move');
+  sound.vibrate(sound.HAPTIC_PATTERNS.PLACE_PIECE); // ADDED: Haptic feedback for piece movement (same as placement)
   state.setSelectedPieceIndex(null); ui.clearSelectedPieceHighlight();
   console.log(`movePiece: Successful move by ${sym} from ${fromIdx} to ${toIdx}.`);
 
@@ -321,13 +325,27 @@ export function endGame(winnerSym, winningCells) {
   state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false); ui.clearSuggestedMoveHighlight(); ui.clearSelectedPieceHighlight();
   if (winnerSym) {
-    ui.launchConfetti(); ui.highlightWinner(winningCells); sound.playSound('win');
+    ui.launchConfetti(); ui.highlightWinner(winningCells); 
+    sound.playSound('win');
+    // Determine if "my" player (the one using the device/browser) won
+    const myPlayerWon = (state.pvpRemoteActive && winnerSym === state.myEffectiveIcon) ||
+                       (!state.pvpRemoteActive && !state.vsCPU && winnerSym === state.myEffectiveIcon) || // Local PvP, I am P1 and I won
+                       (!state.pvpRemoteActive && state.vsCPU && winnerSym === state.myEffectiveIcon); // Vs CPU and I won
+    
+    if (myPlayerWon) {
+        sound.vibrate(sound.HAPTIC_PATTERNS.WIN); // ADDED: Haptic feedback for winning
+    } else {
+        // Opponent won (or in local PvP, P2 won if I was P1)
+        sound.vibrate(sound.HAPTIC_PATTERNS.LOSE_DRAW); // ADDED: Haptic feedback for losing
+    }
+
     const winnerName = player.getPlayerName(winnerSym);
     console.log(`gameLogic.endGame: Winner name determined: '${winnerName}' for symbol '${winnerSym}'`);
     ui.updateStatus(`${winnerName} GANA!`);
   } else {
     console.error(`gameLogic.endGame: Called with no winnerSymbol! This implies a draw might have been misclassified or an error occurred.`);
     ui.updateStatus('Juego terminado'); // Fallback
+    sound.vibrate(sound.HAPTIC_PATTERNS.LOSE_DRAW); // ADDED: Haptic feedback for game end (non-win for player)
   }
   state.setLastWinner(winnerSym); state.setPreviousGameExists(true);
   if(state.pvpRemoteActive||state.vsCPU){if(winnerSym===state.myEffectiveIcon)state.incrementMyWins();else if (winnerSym===state.opponentEffectiveIcon)state.incrementOpponentWins();}
@@ -353,7 +371,10 @@ export function endDraw() {
   console.log(`gameLogic.endDraw. TC: ${state.turnCounter}. Timestamp: ${new Date().toISOString()}`);
   state.setGameActive(false); state.setGamePhase(state.GAME_PHASES.GAME_OVER);
   ui.setBoardClickable(false); ui.clearSuggestedMoveHighlight(); ui.clearSelectedPieceHighlight();
-  ui.playDrawAnimation(); sound.playSound('draw'); ui.updateStatus('¡EMPATE!');
+  ui.playDrawAnimation(); 
+  sound.playSound('draw');
+  sound.vibrate(sound.HAPTIC_PATTERNS.LOSE_DRAW); // ADDED: Haptic feedback for draw
+  ui.updateStatus('¡EMPATE!');
   state.incrementDraws(); state.setLastWinner(null); state.setPreviousGameExists(true);
   localStorage.setItem('drawsTateti', state.draws.toString()); updateScoreboardHandler();
 

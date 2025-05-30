@@ -3,18 +3,14 @@
 <head>
     <meta charset="UTF-8" />
     
-    <!-- ENHANCED VIEWPORT - Disable zoom, scaling -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     
-    <!-- PREVENT ZOOM ON INPUT FOCUS (iOS Safari) -->
     <meta name="format-detection" content="telephone=no" />
     
-    <!-- PWA DISPLAY PREFERENCES -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     
-    <!-- SCREEN ORIENTATION - Prefer portrait -->
     <meta name="screen-orientation" content="portrait" />
     <meta name="orientation" content="portrait" />
     
@@ -28,14 +24,12 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- ORIENTATION MESSAGE -->
     <div id="orientation-message">
         <div class="rotate-icon">📱</div>
         <h2>Por favor, gira tu dispositivo</h2>
         <p>Este juego está optimizado para modo vertical</p>
     </div>
 
-    <!-- MAIN APP CONTAINER -->
     <div id="app-container">
         <div class="top-bar">
             <button id="menu-toggle" class="icon-btn" aria-label="Menú">☰</button>
@@ -111,7 +105,7 @@
             </div>
             <div style="margin-top:auto; display:flex; justify-content:space-around; padding-top:20px;">
                 <button id="soundToggle" class="icon-btn" aria-label="Sonido">🔊</button>
-                <button id="themeToggle" class="icon-btn" aria-label="Tema">🌙</button>
+                <button id="hapticsToggle" class="icon-btn" aria-label="Vibración">📳</button> <button id="themeToggle" class="icon-btn" aria-label="Tema">🌙</button>
             </div>
         </nav>
 
